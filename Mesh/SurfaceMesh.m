@@ -694,7 +694,7 @@ classdef SurfaceMesh
         %------------------------------------------------------------------
         % Generalization to calculate the area vectors of nodes defining
         % curvilinear triangular mesh assumed nodes are equidistant with
-        % configuration consistent w/ that of the NewtonCoates and
+        % configuration consistent w/ that of the NewtonCotes and
         % LangrangeInterpolants functions.
         %
         % for the curvilinear case the product of the basis function

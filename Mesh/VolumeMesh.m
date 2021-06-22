@@ -43,12 +43,15 @@ classdef VolumeMesh
         coordinates      % coordinates of vertices
         cells            % cells (indices of faces)
         
+        surfaceMesh      % surfaceMesh definition
+        
         faces2Cells      % cells associated w/ faces
         isBoundaryFace   % bool array indicating if its a BC face
         
         faceFields       % cell array of stored fields
         nodeFields       % cell array of stored fields 
         
+        hasSurfaceMesh   % bool to track if we have a surf def
         isCurved         % logical to track if mesh is curvilinear
         degree           % polynomial degree of mesh
         volume           % total volume
@@ -66,17 +69,13 @@ classdef VolumeMesh
         
     end
     methods
-        function obj = VolumeMesh(fileName)
-            
-            if nargin==1 && contains(fileName,'obj')
-                [tempVertices,tempFaces] = obj.readOBJ(fileName);
-                obj = obj.initializeFromFaceData(tempVertices,tempFaces);
-            elseif nargin > 1
-                error('incorrect number of inputs')
-            elseif nargin == 1 
-                error('unsupported mesh file format')
+        function obj = VolumeMesh(surfaceMesh)
+            if nargin == 1
+                if isa(surfaceMesh,SurfaceMesh)
+                    obj.surfaceMesh=surfaceMesh;
+                end
             end
-            
+ 
         end
         function obj = initializeGrid(obj,...
                                       minCoordinates,...
@@ -106,126 +105,72 @@ classdef VolumeMesh
             
             [X,Y,Z] = meshgrid(x,y,z);
             
-            obj.coordinates = [X(:),Y(:),Z(:)];
+            obj.coordinates = [obj.coordinates;X(:),Y(:),Z(:)];
             obj.numVertices = size(obj.coordinates,1);
                               
         end
         function obj = delaunayTriangulation(obj)
         % creates DT from the stored vertices
         %------------------------------------------------------------------
-            DT = delaunayTriangulation(obj.coordinates(:,1),...
-                                       obj.coordinates(:,2),...
-                                       obj.coordinates(:,3));
+            DT = delaunayTriangulation(obj.coordinates);
+            obj.cells = DT.ConnectivityMap;
             obj.numCells = size(obj.cells,1);
                               
         end
-        function obj = initializeFromFaceData(obj,tempVertices,tempFaces)
-        % reads in vertex-face representation and initialized he mesh
+        function obj = clipExternalCells(obj)
+        % if cell centroid is external to surface def cull it
         %------------------------------------------------------------------
-        % Inputs:
-        %   vertices -- vertices of mesh
-        %   faces ----- connectivity of triangles [v1,v2,v3]
-        %------------------------------------------------------------------
-        
-                obj.numVertices = size(tempVertices,1);
-                obj.numFaces = size(tempFaces,1);
-                obj.numEdges = 3/2*obj.numFaces;
-                obj.numHalfEdges = 3*obj.numFaces;
-                obj.numNodes = obj.numVertices;
-                obj.numFaceFields = 0;
-                obj.numNodeFields = 0;
-                
-                obj.coordinates = tempVertices;
-                obj.vertexHalfEdges = zeros(obj.numVertices,1);
-                obj.next = zeros(obj.numHalfEdges,1);
-                obj.pair = zeros(obj.numHalfEdges,1);
-                obj.ends = zeros(obj.numHalfEdges,1);
-                
-                for i = 1:obj.numFaces
-                    obj.next(3*i-2:3*i) = [3*i-1;3*i;3*i-2];
-                    obj.ends(3*i-2:3*i) = tempFaces(i,:)';
-                    obj.vertexHalfEdges(tempFaces(i,:)) = [3*i-2,3*i-1,3*i];
-                end
-                
-                obj.faces = [obj.ends(1:3:end),...
-                             obj.ends(2:3:end),...
-                             obj.ends(3:3:end)];
-                         
-                % The rest of this is going to find the pairs
-                %--------------------------------------------
-                % half edges pointing to each vertex
-                allVertexHalfEdges{obj.numVertices}=[];
-                for i = 1:obj.numHalfEdges
-                    vertexIndex = obj.ends(i);
-                    allVertexHalfEdges{vertexIndex} = [allVertexHalfEdges{vertexIndex};i];
-                end
-                
-                % for each half edge we're going to find the previous half
-                % edge in the face loop which points to the pair vertex.
-                % Then we'll loop over the half edges that point to that
-                % vertex to find the correct pair edge
-                for i = 1:obj.numHalfEdges
-                    
-                    if obj.pair(i)==0
-                        
-                        % starting vertex for half edge i
-                        next = obj.next(i);
-                        prev = obj.next(next);
-                        prevVertex = obj.ends(prev);
-                        
-                        % half edges pointing to start vertex 
-                        candidates = allVertexHalfEdges{prevVertex};
-                        for j = 1:length(candidates)
-                            
-                            candidatej=candidates(j);
-                            next = obj.next(candidatej);
-                            prev = obj.next(next);
-                            pairVertex = obj.ends(prev);
-                            
-                            if pairVertex == obj.ends(i)
-                                obj.pair(i) = candidatej;
-                                obj.pair(candidatej) = i;
-                                break
-                            end
-                            
-                        end
-                    end
-                end
-                
-                obj.degree = 1;
-                obj.isCurved = false;
-                
-                obj.volume = obj.calculateVolume();
-                obj.centroid = obj.calculateCentroid();
-                obj.surfaceArea = obj.calculateSurfaceArea();
-                obj.resolution = obj.calculateResolution(); 
-                
-                if any(obj.vertexHalfEdges==0)
-                    warning('dead vertices detected ... attempting to cull and recover the mesh')
-                    obj = obj.cleanDeadVertices();
-                end
+            if ~ obj.hasSurfaceMesh
+                error("requires surface definition to clip")
+            end
             
+            centroids = obj.cellCentroids;
+            isInside = obj.surfaceMesh.isInsideRigorous(centroids);
+            obj.cells = obj.cells(isInside,:);
+
+        end
+        function obj = clipInternalCells(obj)
+        % if cell centroid is internal to surface def cull it
+        %------------------------------------------------------------------
+               
+            if ~ obj.hasSurfaceMesh
+                error("requires surface definition to clip")
+            end
+            
+            centroids = obj.cellCentroids;
+            isInside = obj.surfaceMesh.isInsideRigorous(centroids);
+            obj.cells = obj.cells(~isInside,:);
             
         end
-        function obj = cleanDeadVertices(obj)
-        % cleans out vertices not part of the mesh
+        
+        function [edges,edgeHalfEdges,halfEdgeEdges] = edges(obj)
+        % unique edges within mesh
         %------------------------------------------------------------------
-            vertexIndices = 1:obj.numVertices;
-            oldVertexIndices = vertexIndices(obj.vertexHalfEdges~=0);
-            newVertexIndices = 1:length(oldVertexIndices);
-            for i = 1:length(oldVertexIndices)
-                obj = obj.replaceHalfEdgeVertex(oldVertexIndices(i),...
-                                                newVertexIndices(i));
-            end
-            obj.coordinates = obj.coordinates(oldVertexIndices,:);
-            obj.vertexHalfEdges = obj.vertexHalfEdges(oldVertexIndices,:);
+        % if the pair index is greater than the half edge index we take it
+        % as a unique edge
+        %------------------------------------------------------------------
+        % Outputs:
+        %   edges --------- vertex ids bounding each unique edge
+        %   edgeHalfEdges - halfEdge ids assoc w/ each unique edge
+        %   halfEdgeEdges - unique edge ids assoc w/ each half edge
+        %------------------------------------------------------------------
+        
+            halfEdgeEdges = zeros(obj.numHalfEdges,1);
             
-            obj.faces = [obj.ends(1:3:end),...
-                         obj.ends(2:3:end),...
-                         obj.ends(3:3:end)];
-                     
-            obj.numVertices = length(obj.vertexHalfEdges);
-            obj.numNodes = obj.numVertices;
+            
+            indices = linspace(1,obj.numHalfEdges,obj.numHalfEdges)';
+            rootEdges = obj.pair(obj.pair>indices);
+            pairEdges = obj.pair(rootEdges);
+            
+            edges  = [obj.ends(rootEdges),...
+                      obj.ends(pairEdges)];
+             
+            edgeHalfEdges = [rootEdges,pairEdges];  
+            
+            uniqueEdgeIndices = linspace(1,obj.numEdges,obj.numEdges)';
+            halfEdgeEdges(rootEdges) = uniqueEdgeIndices;
+            halfEdgeEdges(pairEdges) = uniqueEdgeIndices;
+            
         end
         
         function centroids = cellCentroids(obj)
@@ -234,12 +179,54 @@ classdef VolumeMesh
         % Outputs:
         %   centroids - coordinates of centroids
         %------------------------------------------------------------------
-            p1 = obj.coordinates(obj.cells(:,1),:);
-            p2 = obj.coordinates(obj.cells(:,2),:); 
-            p3 = obj.coordinates(obj.cells(:,3),:); 
-            p4 = obj.coordinates(obj.cells(:,4),:); 
-            centroids=1/4*(p1+p2+p3+p4); 
+            if ~ obj.isCurved
+                p1 = obj.coordinates(obj.cells(:,1),:);
+                p2 = obj.coordinates(obj.cells(:,2),:); 
+                p3 = obj.coordinates(obj.cells(:,3),:); 
+                p4 = obj.coordinates(obj.cells(:,4),:); 
+                centroids=1/4*(p1+p2+p3+p4); 
+            end
             
+        end
+        function volumes = cellVolumes(obj)
+        % centroids of cells
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids - coordinates of centroids
+        %------------------------------------------------------------------
+            if ~ obj.isCurved
+                p1 = obj.coordinates(obj.cells(:,1),:);
+                p2 = obj.coordinates(obj.cells(:,2),:)-p1; 
+                p3 = obj.coordinates(obj.cells(:,3),:)-p1; 
+                p4 = obj.coordinates(obj.cells(:,4),:)-p1; 
+                volumes = 1/6*dot(p4,cross(p2,p3,2),2);
+            end
+            
+        end
+        
+        function volume = calculateVolume(obj)
+        % volume contained in mesh
+        %------------------------------------------------------------------
+        % generalized volume calc for curvilinear meshes. 
+        %------------------------------------------------------------------
+        % Outputs:
+        %   vol - volume
+        %------------------------------------------------------------------
+            volume = sum(obj.cellVolumes);
+        end
+        function centroid = calculateCentroid(obj)
+        % centroid of body
+        %------------------------------------------------------------------
+        % Outputs:
+        %   c - 1x3 centroid
+        %------------------------------------------------------------------
+            vf = obj.cellVolumes;
+            cf = obj.cellCentroids;
+            centroid = cf/sum(vf); 
+        end
+        function resolution = calculateResolution(obj)
+            V = obj.cellVolumes();
+            resolution =(sum(V)/size(V,1))^(1/3);
         end
         
         function obj = addFaceField(obj,fieldData,fieldName)

@@ -1063,8 +1063,11 @@ classdef SurfaceMesh
                 r2 = r2./sqrt(r2(:,1).^2+r2(:,2).^2+r2(:,3).^2);
                 r3 = r3./sqrt(r3(:,1).^2+r3(:,2).^2+r3(:,3).^2);
                 
-                omega = atan2(sum(r1.*cross(r2,r3),2),...
-                    (1+sum(r1.*r2+r2.*r3+r3.*r1,2)));
+                % explicitly writing box product faster Matlab R2018a
+                omega = atan2(r1(:,1).*(r2(:,2).*r3(:,3)-r2(:,3).*r3(:,2))+...
+                    r1(:,2).*(r2(:,3).*r3(:,1)-r2(:,1).*r3(:,3))+...
+                    r1(:,3).*(r2(:,1).*r3(:,2)-r2(:,2).*r3(:,1)),...
+                    1+sum(r1.*r2+r3.*(r2+r1),2));
                 omega(isinf(omega)|isnan(omega)) = 0;
                 
                 inside(i) = (sum(omega)-pi)>0.0;
@@ -1155,18 +1158,19 @@ classdef SurfaceMesh
                 % now were going to step things up to final number of pts
                 %----------------------------------------------------------
                 meshTemp = meshTemp.setNumVertices(numSamplePoints);
-            
+                meshTemp=meshTemp.smooth(10,'uniform',false);
+                
                 minDist = zeros(meshTemp.numVertices,1);
                 for i = 1:meshTemp.numVertices
                     r = meshTemp.coordinates(i,:)-obj.coordinates;
                     rmag = vecnorm(r,2,2);
-                    minDist(i,1) = (altitude-min(rmag))/meshTemp.resolution;
+                    minDist(i,1) = (altitude-min(rmag));
                 end
-            
+                
                 % now make sure were right on the const surf
                 %----------------------------------------------------------
-                minDistTolerance = 0.01;
-                iter =0;
+                minDistTolerance = 0.01*meshTemp.resolution
+                iter = 0;
                 while max(abs(minDist))>minDistTolerance && iter < 20
                     
                     pointNormals = meshTemp.vertexNormals;
@@ -1186,6 +1190,7 @@ classdef SurfaceMesh
                     max(abs(minDist))
                     %minDist = max(min(minDist,1.0),-1.0);
                     meshTemp.coordinates = meshTemp.coordinates+pointNormals.*(minDist);
+                    
                     iter = iter+1;
                 end
             end

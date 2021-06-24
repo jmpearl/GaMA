@@ -48,7 +48,7 @@ classdef VolumeMesh
         faces2Cells      % cells associated w/ faces
         isBoundaryFace   % bool array indicating if its a BC face
         
-        faceFields       % cell array of stored fields
+        cellFields       % cell array of stored fields
         nodeFields       % cell array of stored fields 
         
         hasSurfaceMesh   % bool to track if we have a surf def
@@ -70,12 +70,15 @@ classdef VolumeMesh
     end
     methods
         function obj = VolumeMesh(surfaceMesh)
+            obj.hasSurfaceMesh=false;
             if nargin == 1
-                if isa(surfaceMesh,SurfaceMesh)
+                if isa(surfaceMesh,'SurfaceMesh')
                     obj.surfaceMesh=surfaceMesh;
+                    obj.hasSurfaceMesh=true;
                 end
             end
- 
+            obj.isCurved=false;
+            obj.degree = 1;
         end
         function obj = initializeGrid(obj,...
                                       minCoordinates,...
@@ -113,8 +116,10 @@ classdef VolumeMesh
         % creates DT from the stored vertices
         %------------------------------------------------------------------
             DT = delaunayTriangulation(obj.coordinates);
-            obj.cells = DT.ConnectivityMap;
+            obj.cells = DT.ConnectivityList;
             obj.numCells = size(obj.cells,1);
+            obj.numVertices = size(obj.coordinates,1);
+            obj.numNodes = obj.numVertices;
                               
         end
         function obj = clipExternalCells(obj)
@@ -124,9 +129,13 @@ classdef VolumeMesh
                 error("requires surface definition to clip")
             end
             
-            centroids = obj.cellCentroids;
+            centroids = obj.cellCentroids();
             isInside = obj.surfaceMesh.isInsideRigorous(centroids);
-            obj.cells = obj.cells(isInside,:);
+            obj.cells = obj.cells(isInside>0.5,:);
+            
+            obj.numCells = size(obj.cells,1);
+            obj.numVertices = size(obj.coordinates,1);
+            obj.numNodes = obj.numVertices;
 
         end
         function obj = clipInternalCells(obj)
@@ -139,37 +148,117 @@ classdef VolumeMesh
             
             centroids = obj.cellCentroids;
             isInside = obj.surfaceMesh.isInsideRigorous(centroids);
-            obj.cells = obj.cells(~isInside,:);
+            obj.cells = obj.cells(isInside<0.5,:);
+            
+            obj.numCells = size(obj.cells,1);
+            obj.numVertices = size(obj.coordinates,1);
+            obj.numNodes = obj.numVertices;
             
         end
         
-        function [edges,edgeHalfEdges,halfEdgeEdges] = edges(obj)
+        function edges = edges(obj)
         % unique edges within mesh
         %------------------------------------------------------------------
-        % if the pair index is greater than the half edge index we take it
-        % as a unique edge
+        % we make a map using a cell array. the min vertex index in a
+        % vertex pair is used as the cell array index and the max
+        % vertex index stored if it is unique.
         %------------------------------------------------------------------
         % Outputs:
-        %   edges --------- vertex ids bounding each unique edge
-        %   edgeHalfEdges - halfEdge ids assoc w/ each unique edge
-        %   halfEdgeEdges - unique edge ids assoc w/ each half edge
+        %   edges ----- vertex ids bounding each unique edge
         %------------------------------------------------------------------
-        
-            halfEdgeEdges = zeros(obj.numHalfEdges,1);
             
+            % initialize our maps
+            cellEdges{obj.numVertices} = [];
+            edges = zeros(6*obj.numVertices,2);
+            numUniqueEdges=0;
             
-            indices = linspace(1,obj.numHalfEdges,obj.numHalfEdges)';
-            rootEdges = obj.pair(obj.pair>indices);
-            pairEdges = obj.pair(rootEdges);
+            % local vertex indices for 6 edges
+            nodei = [1,2,3,4,4,1];
+            nodej = [2,3,4,1,2,3];
             
-            edges  = [obj.ends(rootEdges),...
-                      obj.ends(pairEdges)];
-             
-            edgeHalfEdges = [rootEdges,pairEdges];  
+            % for each cell loop the local edges
+            for i = 1:obj.numCells
+                
+                for j = 1:6
+                    
+                    vertex1 = obj.cells(i,nodei(j));
+                    vertex2 = obj.cells(i,nodej(j));
+                    vmin = min(vertex1,vertex2);
+                    vmax = max(vertex1,vertex2);
+                    
+                    % if we haven't seen this unique edge before add it
+                    if ~any(cellEdges{vmin}==vmax)
+                        
+                        numUniqueEdges=numUniqueEdges+1;
+                        
+                        cellEdges{vmin}=[cellEdges{vmin},vmax];
+                        edges(numUniqueEdges,1:2) = [vmin,vmax];
+                    end
+                end
+            end
             
-            uniqueEdgeIndices = linspace(1,obj.numEdges,obj.numEdges)';
-            halfEdgeEdges(rootEdges) = uniqueEdgeIndices;
-            halfEdgeEdges(pairEdges) = uniqueEdgeIndices;
+            % clip if we over alloted
+            edges = edges(1:numUniqueEdges,1:2);
+            
+        end
+        function [edges,neighborVertices,edgeCells] = edgesAndRelations(obj)
+        % unique edges within mesh and cell associativity
+        %------------------------------------------------------------------
+        % we make a map using a cell array. the min vertex index in a
+        % vertex pair is used as the cell array index and the max
+        % vertex index stored if it is unique.
+        %------------------------------------------------------------------
+        % Outputs:
+        %   edges ----- vertex ids bounding each unique edge
+        %   cellEdges - edges assoc w/ each cell
+        %   edgeCells - cells assoc w/ each ege
+        %------------------------------------------------------------------
+            
+            % initialize our maps
+            neighborVertices{obj.numVertices} = [];
+            edgeCells{obj.numVertices} = [];
+            uniqueEdgeIndices{obj.numVertices} = [];
+            edges = zeros(6*obj.numVertices,2);
+            numUniqueEdges=0;
+            
+            % local vertex indices for 6 edges
+            nodei = [1,2,3,4,4,1];
+            nodej = [2,3,4,1,2,3];
+            
+            % for each cell loop the local edges
+            for i = 1:obj.numCells
+                for j = 1:6
+                    
+                    vertex1 = obj.cells(i,nodei(j));
+                    vertex2 = obj.cells(i,nodej(j));
+                    vmin = min(vertex1,vertex2);
+                    vmax = max(vertex1,vertex2);
+                    
+                    % if we haven't seen this unique edge before add it
+                    if ~any(neighborVertices{vmin}==vmax)
+                        
+                        numUniqueEdges=numUniqueEdges+1;
+                        
+                        neighborVertices{vmin}=[neighborVertices{vmin},vmax];
+                        uniqueEdgeIndices{vmin} = [uniqueEdgeIndices{vmin},numUniqueEdges];
+                        edges(numUniqueEdges,1:2) = [vmin,vmax];
+                    end
+                    uniqueEdgeij = uniqueEdgeIndices{vmin}(neighborVertices{vmin}==vmax);
+                    cellEdges(i,j) = uniqueEdgeij;
+                    % create our map edge -> cells
+                    
+                    if uniqueEdgeij > length(edgeCells)
+                        edgeCells{uniqueEdgeij}=[i];
+                    else
+                        edgeCells{uniqueEdgeij} = [edgeCells{uniqueEdgeij},i];
+                    end
+                    
+                    
+                end
+            end
+            
+            % clip if we over alloted
+            edges = edges(1:numUniqueEdges,1:2);
             
         end
         
@@ -229,7 +318,7 @@ classdef VolumeMesh
             resolution =(sum(V)/size(V,1))^(1/3);
         end
         
-        function obj = addFaceField(obj,fieldData,fieldName)
+        function obj = addCellField(obj,fieldData,fieldName)
         % adds a face field that can be export to vtk
         %------------------------------------------------------------------
         % Inputs:
@@ -240,17 +329,17 @@ classdef VolumeMesh
                 fieldName = func2str(fieldData);
                 fieldData = fieldData(obj.faceCentroids());
             end
-            if size(fieldData,1)~=obj.numFaces
+            if size(fieldData,1)~=obj.numCells
                 error('faceFieldData must have num of row equal to numFaces')
             end
-            obj.numFaceFields = obj.numFaceFields + 1;
+            obj.numCellFields = obj.numCellFields + 1;
             if nargin == 2
-                fieldName = ['field_',num2str(obj.numFaceFields)];
+                fieldName = ['field_',num2str(obj.numCellFields)];
             elseif nargin ~=3
                 error('incorrect number of inputs')
             end
-            obj.faceFields{obj.numFaceFields}.data = fieldData;
-            obj.faceFields{obj.numFaceFields}.name = fieldName;
+            obj.cellFields{obj.numCellFields}.data = fieldData;
+            obj.cellFields{obj.numCellFields}.name = fieldName;
         end
         function obj = addNodeField(obj,fieldData,fieldName)
         % adds a node field that can be export to vtk
@@ -280,10 +369,10 @@ classdef VolumeMesh
         %------------------------------------------------------------------
         
             obj.numNodeFields = 0;
-            obj.numFaceFields = 0;
+            obj.numCellFields = 0;
             
             obj.nodeFields = [];
-            obj.faceFields = [];
+            obj.cellFields = [];
         end
         
         function [] = writeVTK(obj,fileName,precision)
@@ -302,13 +391,14 @@ classdef VolumeMesh
                 precision = 8;
             end
             
-            %vtk flags for rectilinear and quadratic triangles
+            %vtk flags for rectilinear and quadratic tetrahedra -- need to
+            %figure out how to get multiple cell types
             if obj.degree == 1
-                cellType = '5\n';
-                numLocalNodes = 3;
+                cellType = '10\n';
+                numLocalNodes = 4;
             elseif obj.degree == 2 
-                cellType = '22\n';
-                numLocalNodes = 6;
+                cellType = '24\n';
+                numLocalNodes = 10;
             else 
                 error('Degree greater than 2 not supported')
             end
@@ -330,53 +420,46 @@ classdef VolumeMesh
                 fprintf(fileID, outputi );
             end
             
-            % Write Cells
+            % Write Cells --- needs fixing for tetra10
             %--------------------------------------------------------------
-            fprintf(fileID,['CELLS ',num2str(obj.numFaces),' ',num2str(obj.numFaces*(numLocalNodes+1)),'\n']);
-            for i = 1:obj.numFaces
+            fprintf(fileID,['CELLS ',num2str(obj.numCells),' ',num2str(obj.numCells*(numLocalNodes+1)),'\n']);
+            for i = 1:obj.numCells
                 if obj.degree == 1
-                    outputi = [num2str([length(obj.faces(i,:)),obj.faces(i,:)-1]),'\n'];
+                    outputi = [num2str([length(obj.cells(i,:)),obj.cells(i,:)-1]),'\n'];
                 elseif obj.degree == 2
-                    facei = obj.faces(i,[1,3,6,2,5,4])-1;
-                    outputi = [num2str([length(obj.faces(i,:)),facei]),'\n'];
+                    teti = obj.cells(i,[1,3,10,2,4,5,6,7,8,9])-1;
+                    outputi = [num2str([length(obj.cells(i,:)),teti]),'\n'];
                 end
                 fprintf(fileID,outputi);
             end
             
             % Write CellTypes
             %--------------------------------------------------------------
-            fprintf(fileID,['CELL_TYPES ',num2str(obj.numFaces),'\n']);
-            for i = 1:obj.numFaces
+            fprintf(fileID,['CELL_TYPES ',num2str(obj.numCells),'\n']);
+            for i = 1:obj.numCells
                 fprintf(fileID,cellType);
                 
             end
             
             % Write Cell Data
             %--------------------------------------------------------------
-            fprintf(fileID,['CELL_DATA ',num2str(obj.numFaces),'\n']);
+            fprintf(fileID,['CELL_DATA ',num2str(obj.numCells),'\n']);
            
-            vtkDataHeader = 'VECTORS faceNormals float\n';
-            fprintf(fileID,vtkDataHeader);
-            normals = obj.faceNormals();
-            for j = 1:obj.numFaces
-                outputi = [num2str(normals(j,:),precision),'\n'];
-                fprintf(fileID,outputi);
-            end
             
-            for i = 1:size(obj.faceFields,2)
-                if size(obj.faceFields{i}.data,2)==1
-                    vtkDataHeader = ['SCALARS ',obj.faceFields{i}.name,' float 1\nLOOKUP_TABLE default\n'];
-                elseif size(obj.faceFields{i}.data,2)==3
-                    vtkDataHeader = ['VECTORS ',obj.faceFields{i}.name,' float\n'];
+            for i = 1:size(obj.cellFields,2)
+                if size(obj.cellFields{i}.data,2)==1
+                    vtkDataHeader = ['SCALARS ',obj.cellFields{i}.name,' float 1\nLOOKUP_TABLE default\n'];
+                elseif size(obj.cellFields{i}.data,2)==3
+                    vtkDataHeader = ['VECTORS ',obj.cellFields{i}.name,' float\n'];
                 else
                     warning(['skipping faceData{',num2str(i),'} not scalar or vector'])
                 end
                 fprintf(fileID,vtkDataHeader);
-                if size(obj.faceFields{i}.data,1)~=obj.numFaces
+                if size(obj.cellFields{i}.data,1)~=obj.numCells
                     error(['faceData{',num2str(i),'} inconsistent w/ number of mesh faces'])
                 end
-                for j = 1:obj.numFaces
-                    outputi = [num2str(obj.faceFields{i}.data(j,:),precision),'\n'];
+                for j = 1:obj.numCells
+                    outputi = [num2str(obj.cellFields{i}.data(j,:),precision),'\n'];
                     fprintf(fileID,outputi);
                 end
                 

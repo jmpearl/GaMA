@@ -174,7 +174,18 @@ classdef SurfaceMesh
             vertexIndices = 1:obj.numVertices;
             oldVertexIndices = vertexIndices(obj.vertexHalfEdges~=0);
             newVertexIndices = 1:length(oldVertexIndices);
+            disp("-----------------------------")
+            disp(" Cleaning out dead vertices ")
+            disp(" this could take a minute... ")
+            disp(" ")
+            disp(" total vertices : ")
+            disp(obj.numVertices)
+            disp(" live vertices : ")
+            disp(newVertexIndices(end))
+            disp("")
+            disp("-----------------------------")
             for i = 1:length(oldVertexIndices)
+                
                 obj = obj.replaceHalfEdgeVertex(oldVertexIndices(i),...
                                                 newVertexIndices(i));
             end
@@ -3726,12 +3737,13 @@ classdef SurfaceMesh
             fid = fopen(fileName,'r');
             tline = fgetl(fid);
             while ischar(tline)
+                str = strtrim(tline);
                 if isempty(tline)
                     %disp('empty')
-                elseif tline(1) == 'v'
-                    vertexchar = [vertexchar,tline(2:end)];
-                elseif tline(1) =='f'
-                    facechar = [facechar,tline(2:end)];
+                elseif str(1) == 'v'
+                    vertexchar = [vertexchar,str(2:end)];
+                elseif str(1) =='f'
+                    facechar = [facechar,str(2:end)];
                 end
                 tline = fgetl(fid);
             end

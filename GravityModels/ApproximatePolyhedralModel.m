@@ -18,7 +18,7 @@ properties (GetAccess=public)
         frame;          % integrator needs to know if bff or inertial x,y,z
         GrhoAn;         % G x density x facet area  vector An
         positions;      % quadrature points
-        
+        res;
         quadratureRule  % name of quadrature rule 
         numElements     % number of quadrature points
     end
@@ -33,6 +33,7 @@ properties (GetAccess=public)
             elseif nargin~=0
                 error('incorrect number of arguments in constructor')
             end
+            
         end        
         
         function obj = initializeFromMesh(obj,mesh,Mu,quadratureRule)
@@ -55,7 +56,7 @@ properties (GetAccess=public)
                 obj.quadratureRule = quadratureRule;
             end
             obj.GrhoAn = Mu/mesh.volume*Aq;
-            
+            obj.res = sqrt(vecnorm(obj.GrhoAn/Mu*mesh.volume,2,2))/4;
             obj.numElements = size(Aq,1);
             
             
@@ -92,12 +93,11 @@ properties (GetAccess=public)
         % Outputs:
         %   acceleration - [Mx3] gravitational acceleration at sample sites
         %------------------------------------------------------------------
-            
             acceleration  = zeros(size(p,1),3);
             
             for i = 1:size(p,1)
                 r = obj.positions-p(i,:);
-                rinv = 1./sqrt(r(:,1).^2+r(:,2).^2+r(:,3).^2);
+                rinv = 1./max(sqrt(r(:,1).^2+r(:,2).^2+r(:,3).^2),obj.res);
                 acceleration(i,1:3) = -rinv'*obj.GrhoAn;
             end
                
@@ -112,10 +112,12 @@ properties (GetAccess=public)
         %   laplacian - [Mx1] laplacian at sample sites
         %------------------------------------------------------------------
 
+            res2 = obj.res.^2;
             laplacian  = zeros(size(p,1),1);
             for i = 1:size(p,1)
                 r = obj.positions-p(i,:); % position of q-points relative to sample point P
-                rOverRinv3 = r./(r(:,1).^2+r(:,2).^2+r(:,3).^2).^(3/2);
+                
+                rOverRinv3 = r./max(r(:,1).^2+r(:,2).^2+r(:,3).^2,res2).^(3/2);
                 laplacian(i,1) =  -obj.GrhoAn(:)'*rOverRinv3(:); % Laplacian
             end
             
@@ -129,13 +131,14 @@ properties (GetAccess=public)
         % Outputs:
         %   gravGradient - [Mx6] acceleration gradient at sample sites
         %------------------------------------------------------------------
-         
+            
+            res2 = obj.res.^2;
             gravGradient  = zeros(size(p,1),6);
             
             for i = 1:size(p,1)
                 
                 r = obj.positions-p(i,:); % position of q-points relative to sample point P
-                rinv3 = 1./(r(:,1).^2+r(:,2).^2+r(:,3).^2).^(3/2);
+                rinv3 = 1./max(r(:,1).^2+r(:,2).^2+r(:,3).^2,res2).^(3/2);
                 rOverR3 = r.*rinv3; % r/r3
                 
                 gravGradient(i,1:3) =  -obj.GrhoAn(:,1)'*rOverR3;        % 11, 12, 13

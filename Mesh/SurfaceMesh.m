@@ -1484,443 +1484,7 @@ classdef SurfaceMesh
 
                          
         end
-        function projectedPoints = project(obj, points, pointNormals)
-        % projects set of near-surface points onto the mesh.
-        %------------------------------------------------------------------
-        % for each point, begin by testing the nearest n-facets in the
-        % local octant. If no appropriate facet is found the next nearest
-        % n-facets is searched and this is repeated several times. If still
-        % no facet for projection is found reset the search domain to all
-        % facets (i.e. all 8 octants) since we're probably dealing with a
-        % octant boundary case. 
-        %------------------------------------------------------------------
-        % Inputs:
-        %   points -------- points to be projected onto the mesh
-        %   pointNormals -- projection direction for each point 
-        %------------------------------------------------------------------
-        % Outputs:
-        %   projectPoints - new post-projection coordinates
-        %------------------------------------------------------------------
-            
-            numCandidates = 12;
-            maxProjectionDistance = min(max(obj.coordinates,[],1) - ...
-                                        min(obj.coordinates,[],1))/3;
-            projectedPoints = zeros(size(points,1),3);
-            
-            % if no projection direction specified use radial
-            if nargin==2
-                pointNormals = points...
-                    ./sqrt(points(:,1).^2+points(:,2).^2+points(:,3).^2);
-            end
-
-            % We're going to project onto this mesh providing a theshold
-            % for whether a line intersects a triangle
-            faceCentroids = obj.faceCentroids();
-            faceNormals = obj.faceNormals();
-            faceCoordinates1 = obj.coordinates(obj.faces(:,1),:);
-            faceCoordinates2 = obj.coordinates(obj.faces(:,2),:);
-            faceCoordinates3 = obj.coordinates(obj.faces(:,3),:);
-            
-            % parse receiving faces into respective octants
-            %--------------------------------------------------------------
-            Nsteps = 2;
-            octantFaceIndices{8} = [];
-            octantFaceCentroids{8} = [];
-            
-            indices = 1:obj.numFaces;
-            
-            % create some overlap between octants so that we don't really
-            % have to do special stuff for bc cases.
-            offset = ones(8,3);
-            offset(2:2:end,1) = -1;
-            offset([3,4,7,8],2) = -1;
-            offset(5:end,3) = -1;
-            for i = 1:8
-                nodeOctants = 1 +(faceCentroids(:,1) > (2*obj.resolution * offset(i,1)))...
-                        + Nsteps*(faceCentroids(:,2) > (2*obj.resolution * offset(i,2)))...
-                      + Nsteps^2*(faceCentroids(:,3) > (2*obj.resolution * offset(i,3)));
-                  
-                octantFaceIndices{i}=indices(nodeOctants==i);
-                octantFaceCentroids{i}=faceCentroids(octantFaceIndices{i},:); 
-            end
-             
-
-            % Project
-            %--------------------------------------------------------------
-            for i=1:size(points,1)
-                threshold = 1e-4;
-                ni = pointNormals(i,:);    
-                coordi = points(i,:); 
-                
-                octIndex = 1 +(coordi(1,1)>0)+...
-                            2*(coordi(1,2)>0)+...
-                            4*(coordi(1,3)>0);
-                        
-                dist = octantFaceCentroids{octIndex}-coordi;             
-                dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
-                
-                allFaces=false;   
-                projFaceFound=false;
-                numCandidatesi = numCandidates;
-                
-                while ~projFaceFound
-                    
-                    % select the closest n faces
-                    [~,candidates] = mink(dist,numCandidatesi); 
-                    if ~allFaces
-                        candidates = octantFaceIndices{octIndex}(candidates);
-                    end
-                    
-                    j0 = numCandidatesi-numCandidates+1;
-                    j1 = numCandidatesi;
-                    
-                    for j = j0:j1
-                    
-                        % things for face-j
-                        nf = faceNormals(candidates(j),:);      
-                        coord1 = faceCoordinates1(candidates(j),:); 
-                        coord2 = faceCoordinates2(candidates(j),:);
-                        coord3 = faceCoordinates3(candidates(j),:);
-
-                        % intersection algo -
-                        %--------------------------------------------------
-                        % there was some brutal overhead using the func
-                        
-                        distance = - (nf(1)*(coordi(1)-coord1(1))+...
-                                      nf(2)*(coordi(2)-coord1(2))+...
-                                      nf(3)*(coordi(3)-coord1(3)))/...
-                                  (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
-                        
-                        % point of intersection
-                        intersectionCoord = coordi + distance*ni;
-                        
-                        v1 = coord2-coord1;            % edge vector 1
-                        v2 = coord3-coord1;            % edge vector 2
-                        v0 = intersectionCoord-coord1; % vector to intersection point
-                        
-                        % calc parametric coordinates of intersection point
-                        dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
-                        dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
-                        dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
-                        dotv0v2 = v0(1)*v2(1) + v0(2)*v2(2) + v0(3)*v2(3);
-                        dotv0v1 = v0(1)*v1(1) + v0(2)*v1(2) + v0(3)*v1(3);
-                        denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
-                        
-                        xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
-                        yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
-                        
-                        if        xj > -threshold && ...
-                                  yj > -threshold && ...
-                           1-(xj+yj) > -threshold && ...
-                           distance > - maxProjectionDistance
-                       
-                            projectedPoints(i,1:3) = intersectionCoord;
-                            projFaceFound = true;
-                            break
-                        end
-                        
-                        % expand search if we fail
-                        %--------------------------------------------------
-                        if ~projFaceFound && j == j1
-                            numCandidatesi = numCandidatesi+numCandidates;
-                            
-                            % expand search if we fail a lot
-                            %----------------------------------------------
-                            if (numCandidatesi > 4.5 * numCandidates) && allFaces==false
-                                disp('failed ... seaching all...')
-                                allFaces=true;
-                                numCandidatesi = numCandidates;
-                                dist = faceCentroids-coordi;             
-                                dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
-                            end
-                            
-                            % if we keep failing reduce tolerance, its
-                            % probably a collocated node or something like
-                            % that 
-                            if (numCandidatesi > 4.5 * numCandidates) && ...
-                                allFaces==true && ...
-                                threshold < 0.11*obj.resolution
-                                
-                                threshold = min(threshold*10,0.11*obj.resolution);
-                                numCandidatesi = numCandidates;
-                                %dist = faceCentroids-coordi;             
-                                %dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
-                            end
-                        end
-                        if allFaces == true && numCandidatesi > (obj.numFaces-numCandidates)
-                            error('candidate face for projection could not be found')
-                        end
-                    end
-                    
-                end
-            end
-                
-        end
-        function projectedPoints = projectRobust(obj, points, pointNormals)
-        % projects set of near-surface points onto the mesh.
-        %------------------------------------------------------------------
-        % for each point, begin by testing the nearest n-facets in the
-        % local octant. If no appropriate facet is found the next nearest
-        % n-facets is searched and this is repeated several times. If still
-        % no facet for projection is found reset the search domain to all
-        % facets (i.e. all 8 octants) since we're probably dealing with a
-        % octant boundary case. 
-        %------------------------------------------------------------------
-        % Inputs:
-        %   points -------- points to be projected onto the mesh
-        %   pointNormals -- projection direction for each point 
-        %------------------------------------------------------------------
-        % Outputs:
-        %   projectPoints - new post-projection coordinates
-        %------------------------------------------------------------------
-            obj.resolution
-            threshold = 1e-4;
-            projectedPoints = zeros(size(points,1),3);
-            
-            % if no projection direction specified use radial
-            if nargin==2
-                pointNormals = points...
-                    ./sqrt(points(:,1).^2+points(:,2).^2+points(:,3).^2);
-            end
-
-            if obj.degree>1
-                warning('projection not set up for degree>1 ... flattening')
-                obj = obj.flatten();
-            end
-            
-            % We're going to project onto this mesh providing a theshold
-            % for whether a line intersects a triangle
-            faceNormals = obj.faceNormals();
-            faceCoordinates1 = obj.coordinates(obj.faces(:,1),:);
-            faceCoordinates2 = obj.coordinates(obj.faces(:,2),:);
-            faceCoordinates3 = obj.coordinates(obj.faces(:,3),:);
-
-            % Project
-            %--------------------------------------------------------------
-            for i=1:size(points,1)
-                ni = pointNormals(i,:);   
-                coordi = points(i,:);
-                        
-                distancej = -obj.resolution*1e10;
-                
-                for j = 1:obj.numFaces
-                    
-                    % things for face-j
-                    nf = faceNormals(j,:);
-                    coord1 = faceCoordinates1(j,:);
-                    coord2 = faceCoordinates2(j,:);
-                    coord3 = faceCoordinates3(j,:);
-                    
-                    % intersection algo -
-                    %--------------------------------------------------
-                    % there was some brutal overhead using the func
-                    
-                    distance = - (nf(1)*(coordi(1)-coord1(1))+...
-                                  nf(2)*(coordi(2)-coord1(2))+...
-                                  nf(3)*(coordi(3)-coord1(3)))/...
-                               (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
-                    
-                    % point of intersection
-                    intersectionCoord = coordi + distance*ni;
-                    
-                    v1 = coord2-coord1;            % edge vector 1
-                    v2 = coord3-coord1;            % edge vector 2
-                    v0 = intersectionCoord-coord1; % vector to intersection point
-                    
-                    % calc parametric coordinates of intersection point
-                    dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
-                    dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
-                    dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
-                    dotv0v2 = v0(1)*v2(1) + v0(2)*v2(2) + v0(3)*v2(3);
-                    dotv0v1 = v0(1)*v1(1) + v0(2)*v1(2) + v0(3)*v1(3);
-                    denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
-                    
-                    xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
-                    yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
-                    
-                    if      xj > -threshold && ...
-                            yj > -threshold && ...
-                     1-(xj+yj) > -threshold && ...
-                      distance > distancej
-                      if i ==1
-                         disp([xj,yj,1-xj-yj]) 
-                      end
-                        projectedPoints(i,1:3) = intersectionCoord;
-                        distancej = distance;
-                    end
-                    
-                end
-            end
-                
-        end
-        function faceShading = shadowedFaces(obj, lightDirection)
-        % finds shadowed faces based on lighting direction
-        %------------------------------------------------------------------
-        % uses a 2d background mesh to search for possible shadowing. The 
-        % search is limited to faces who's normals have a negative dot 
-        % product with the light direction.
-        %
-        %------------------------------------------------------------------
-        % Inputs:
-        %   lightDirection - direction light comes in at
-        %------------------------------------------------------------------
-        % Outputs:
-        %   faceShading ----- scale 0 - 1 giving face shading
-        %------------------------------------------------------------------
-         % reused x1 and x2 badddness
-            if obj.degree>1
-                error('shading only implemented for rectilinear grids')
-            end
-            if ~size(lightDirection,2)==3 || ~size(lightDirection,1)==1
-                error('lightDirection must be 1x3 vector')
-            end
-            lightDirection = lightDirection/norm(lightDirection);
-            
-            threshold = 1e-4;
-            
-            % initialize faces on backside as shadowed
-            faceShading = obj.faceNormals()*lightDirection';
-            faceShading(faceShading<0) = 0;
-            faceShading(faceShading>0) = 1;
-            
-            
-            % some things we'll need and easy aliases
-            faceVertices1 = obj.coordinates(obj.faces(:,1),:); 
-            faceVertices2 = obj.coordinates(obj.faces(:,2),:); 
-            faceVertices3 = obj.coordinates(obj.faces(:,3),:); 
-            faceCentroids = obj.faceCentroids();
-            faceNormals = obj.faceNormals();
-      
-            % construct orthnormal basis for lighting plane
-            %--------------------------------------------------------------
-            z0 = -lightDirection/norm(lightDirection);
-            x0 = [-z0(2), z0(1), 0;...
-                  -z0(3), 0,     z0(1);...
-                   0,    -z0(3), z0(2)];
-            [~,i] = max(dot(x0,x0,2));
-            x0 = x0(i,:);
-            x0 = x0/norm(x0);
-            
-            y0 = cross(z0,x0);
-            y0 = y0/norm(y0);
-            
-            % coordinates in new basis
-            x0 = faceCentroids*x0'; % parametric coord 1
-            y0 = faceCentroids*y0'; % parametric coord 2
-            z0 = faceCentroids*z0'; % parametric coord 3 (height off plane)
-
-            % construct background mesh, group face-centroids by mesh-cell
-            %--------------------------------------------------------------
-            Nsteps = ceil(min(max(x0)-min(x0),max(y0)-min(y0))/obj.resolution/2.0);
-
-            x1 = x0-min(x0)+obj.resolution;
-            x1 = x1/(max(x1)+obj.resolution)*Nsteps;
-            
-            y1 = y0-min(y0)+obj.resolution;
-            y1 = y1/(max(y1)+obj.resolution)*Nsteps;
-            
-            faceIndices = 1:obj.numFaces;
-          
-            meshIndex = Nsteps*floor(y1)+ceil(x1);
-            
-            cellNodes{Nsteps^2}=[];
-            for i = 1:Nsteps^2
-                cellNodes{i} = faceIndices(meshIndex==i);
-            end
-            tempCellNodes = cellNodes;
-            
-            for i = 1:Nsteps^2
-                if i > Nsteps
-                    if rem(i,Nsteps)~=1
-                        cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps-1}];
-                    end
-                    cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps}];
-                    if rem(i,Nsteps)~=0
-                        cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps+1}];
-                    end
-                end
-                if i <= Nsteps^2-Nsteps
-                    if rem(i,Nsteps)~=1
-                        cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps-1}];
-                    end
-                    cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps}];
-                    if rem(i,Nsteps)~=0
-                        cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps+1}];
-                    end
-                end
-                if rem(i,Nsteps)~=1
-                    cellNodes{i} = [cellNodes{i},tempCellNodes{i-1}];
-                end
-                if rem(i,Nsteps)~=0
-                    cellNodes{i} = [cellNodes{i},tempCellNodes{i+1}];
-                end
-            end
-            
-         
-            % check for shadowing
-            %--------------------------------------------------------------
-            for i=1:obj.numFaces
-                
-                if faceShading(i)==0
-                    
-                    coordi = faceCentroids(i,:);
-                    ni  = lightDirection;
-                    
-                    candidates = cellNodes{meshIndex(i)};
-                    numCandidates = length(candidates);
-                    
-                    candidateNormals   = faceNormals(candidates,:);        
-                    candidateVertices1 = faceVertices1(candidates,:); 
-                    candidateVertices2 = faceVertices2(candidates,:); 
-                    candidateVertices3 = faceVertices3(candidates,:); 
-                    
-                    for j = 2:numCandidates
-                        
-                        nf     = candidateNormals(j,:);    
-                        coord1 = candidateVertices1(j,:);  
-                        coord2 = candidateVertices2(j,:); 
-                        coord3 = candidateVertices3(j,:); 
-                        
-                        % intersection algo - "inlined"
-                        %--------------------------------------------------
-                        distance = - (nf(1)*(coordi(1)-coord1(1))+...
-                            nf(2)*(coordi(2)-coord1(2))+...
-                            nf(3)*(coordi(3)-coord1(3)))/...
-                            (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
-                        
-                        % point of intersection
-                        intersectionCoord = coordi + distance*ni;
-                        
-                        v1 = coord2-coord1;            % edge vector 1
-                        v2 = coord3-coord1;            % edge vector 2
-                        v0 = intersectionCoord-coord1; % vector to intersection point
-                        
-                        % calc parametric coordinates of intersection point
-                        dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
-                        dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
-                        dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
-                        dotv0v2  =  v0(1)*v2(1) + v0(2)*v2(2) +  v0(3)*v2(3);
-                        dotv0v1  =  v0(1)*v1(1) + v0(2)*v1(2) +  v0(3)*v1(3);
-                        denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
-                        
-                        xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
-                        yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
-                        
-                        if       xj  > -threshold && ...
-                                 yj  > -threshold && ...
-                           1-(xj+yj) > -threshold && ...
-                           z0(candidates(j))>z0(i)
-                       
-                            faceShading(i)=1;
-                            break
-                            
-                        end
-                        
-                        
-                    end
-                end
-            end 
-        end
+        
         function obj = coarsen(obj,numFacesCoarse)
         % coarsens mesh attempting to maintain uniform mesh resolution
         %------------------------------------------------------------------
@@ -2528,6 +2092,294 @@ classdef SurfaceMesh
             obj = obj.clearFields();
         end
         
+        function obj = projectOnTo(obj, mesh)
+        % projects onto another mesh
+        %------------------------------------------------------------------
+        % wrapper for the project points method that makes UI easier
+        %------------------------------------------------------------------
+        % Inputs:
+        %   mesh ---------- SurfaceMesh object, must be of similar topology
+        %                   for the projection routine to work.
+        %------------------------------------------------------------------
+            
+            obj.coordinates = mesh.project(obj.coordinates,obj.nodeNormals());
+            
+            obj.volume = obj.calculateVolume;
+            obj.surfaceArea = obj.calculateSurfaceArea;
+            obj.centroid = obj.calculateCentroid;
+            obj = obj.clearFields();
+                
+        end
+        function projectedPoints = project(obj, points, pointNormals)
+        % projects set of near-surface points onto the mesh.
+        %------------------------------------------------------------------
+        % for each point, begin by testing the nearest n-facets in the
+        % local octant. If no appropriate facet is found the next nearest
+        % n-facets is searched and this is repeated several times. If still
+        % no facet for projection is found reset the search domain to all
+        % facets (i.e. all 8 octants) since we're probably dealing with a
+        % octant boundary case. 
+        %------------------------------------------------------------------
+        % Inputs:
+        %   points -------- points to be projected onto the mesh
+        %   pointNormals -- projection direction for each point 
+        %------------------------------------------------------------------
+        % Outputs:
+        %   projectPoints - new post-projection coordinates
+        %------------------------------------------------------------------
+            
+            numCandidates = 12;
+            maxProjectionDistance = min(max(obj.coordinates,[],1) - ...
+                                        min(obj.coordinates,[],1))/3;
+            projectedPoints = zeros(size(points,1),3);
+            
+            % if no projection direction specified use radial
+            if nargin==2
+                pointNormals = points...
+                    ./sqrt(points(:,1).^2+points(:,2).^2+points(:,3).^2);
+            end
+
+            % We're going to project onto this mesh providing a theshold
+            % for whether a line intersects a triangle
+            faceCentroids = obj.faceCentroids();
+            faceNormals = obj.faceNormals();
+            faceCoordinates1 = obj.coordinates(obj.faces(:,1),:);
+            faceCoordinates2 = obj.coordinates(obj.faces(:,2),:);
+            faceCoordinates3 = obj.coordinates(obj.faces(:,3),:);
+            
+            % parse receiving faces into respective octants
+            %--------------------------------------------------------------
+            Nsteps = 2;
+            octantFaceIndices{8} = [];
+            octantFaceCentroids{8} = [];
+            
+            indices = 1:obj.numFaces;
+            
+            % create some overlap between octants so that we don't really
+            % have to do special stuff for bc cases.
+            offset = ones(8,3);
+            offset(2:2:end,1) = -1;
+            offset([3,4,7,8],2) = -1;
+            offset(5:end,3) = -1;
+            for i = 1:8
+                nodeOctants = 1 +(faceCentroids(:,1) > (2*obj.resolution * offset(i,1)))...
+                        + Nsteps*(faceCentroids(:,2) > (2*obj.resolution * offset(i,2)))...
+                      + Nsteps^2*(faceCentroids(:,3) > (2*obj.resolution * offset(i,3)));
+                  
+                octantFaceIndices{i}=indices(nodeOctants==i);
+                octantFaceCentroids{i}=faceCentroids(octantFaceIndices{i},:); 
+            end
+             
+
+            % Project
+            %--------------------------------------------------------------
+            for i=1:size(points,1)
+                threshold = 1e-4;
+                ni = pointNormals(i,:);    
+                coordi = points(i,:); 
+                
+                octIndex = 1 +(coordi(1,1)>0)+...
+                            2*(coordi(1,2)>0)+...
+                            4*(coordi(1,3)>0);
+                        
+                dist = octantFaceCentroids{octIndex}-coordi;             
+                dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
+                
+                allFaces=false;   
+                projFaceFound=false;
+                numCandidatesi = numCandidates;
+                
+                while ~projFaceFound
+                    
+                    % select the closest n faces
+                    [~,candidates] = mink(dist,numCandidatesi); 
+                    if ~allFaces
+                        candidates = octantFaceIndices{octIndex}(candidates);
+                    end
+                    
+                    j0 = numCandidatesi-numCandidates+1;
+                    j1 = numCandidatesi;
+                    
+                    for j = j0:j1
+                    
+                        % things for face-j
+                        nf = faceNormals(candidates(j),:);      
+                        coord1 = faceCoordinates1(candidates(j),:); 
+                        coord2 = faceCoordinates2(candidates(j),:);
+                        coord3 = faceCoordinates3(candidates(j),:);
+
+                        % intersection algo -
+                        %--------------------------------------------------
+                        % there was some brutal overhead using the func
+                        
+                        distance = - (nf(1)*(coordi(1)-coord1(1))+...
+                                      nf(2)*(coordi(2)-coord1(2))+...
+                                      nf(3)*(coordi(3)-coord1(3)))/...
+                                  (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
+                        
+                        % point of intersection
+                        intersectionCoord = coordi + distance*ni;
+                        
+                        v1 = coord2-coord1;            % edge vector 1
+                        v2 = coord3-coord1;            % edge vector 2
+                        v0 = intersectionCoord-coord1; % vector to intersection point
+                        
+                        % calc parametric coordinates of intersection point
+                        dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
+                        dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
+                        dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
+                        dotv0v2 = v0(1)*v2(1) + v0(2)*v2(2) + v0(3)*v2(3);
+                        dotv0v1 = v0(1)*v1(1) + v0(2)*v1(2) + v0(3)*v1(3);
+                        denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
+                        
+                        xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
+                        yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
+                        
+                        if        xj > -threshold && ...
+                                  yj > -threshold && ...
+                           1-(xj+yj) > -threshold && ...
+                           distance > - maxProjectionDistance
+                       
+                            projectedPoints(i,1:3) = intersectionCoord;
+                            projFaceFound = true;
+                            break
+                        end
+                        
+                        % expand search if we fail
+                        %--------------------------------------------------
+                        if ~projFaceFound && j == j1
+                            numCandidatesi = numCandidatesi+numCandidates;
+                            
+                            % expand search if we fail a lot
+                            %----------------------------------------------
+                            if (numCandidatesi > 4.5 * numCandidates) && allFaces==false
+                                disp('failed ... seaching all...')
+                                allFaces=true;
+                                numCandidatesi = numCandidates;
+                                dist = faceCentroids-coordi;             
+                                dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
+                            end
+                            
+                            % if we keep failing reduce tolerance, its
+                            % probably a collocated node or something like
+                            % that 
+                            if (numCandidatesi > 4.5 * numCandidates) && ...
+                                allFaces==true && ...
+                                threshold < 0.11*obj.resolution
+                                
+                                threshold = min(threshold*10,0.11*obj.resolution);
+                                numCandidatesi = numCandidates;
+                                %dist = faceCentroids-coordi;             
+                                %dist = dist(:,1).^2 + dist(:,2).^2 + dist(:,3).^2;
+                            end
+                        end
+                        if allFaces == true && numCandidatesi > (obj.numFaces-numCandidates)
+                            error('candidate face for projection could not be found')
+                        end
+                    end
+                    
+                end
+            end
+                
+        end
+        function projectedPoints = projectRobust(obj, points, pointNormals)
+        % projects set of near-surface points onto the mesh.
+        %------------------------------------------------------------------
+        % for each point, begin by testing the nearest n-facets in the
+        % local octant. If no appropriate facet is found the next nearest
+        % n-facets is searched and this is repeated several times. If still
+        % no facet for projection is found reset the search domain to all
+        % facets (i.e. all 8 octants) since we're probably dealing with a
+        % octant boundary case. 
+        %------------------------------------------------------------------
+        % Inputs:
+        %   points -------- points to be projected onto the mesh
+        %   pointNormals -- projection direction for each point 
+        %------------------------------------------------------------------
+        % Outputs:
+        %   projectPoints - new post-projection coordinates
+        %------------------------------------------------------------------
+            obj.resolution
+            threshold = 1e-4;
+            projectedPoints = zeros(size(points,1),3);
+            
+            % if no projection direction specified use radial
+            if nargin==2
+                pointNormals = points...
+                    ./sqrt(points(:,1).^2+points(:,2).^2+points(:,3).^2);
+            end
+
+            if obj.degree>1
+                warning('projection not set up for degree>1 ... flattening')
+                obj = obj.flatten();
+            end
+            
+            % We're going to project onto this mesh providing a theshold
+            % for whether a line intersects a triangle
+            faceNormals = obj.faceNormals();
+            faceCoordinates1 = obj.coordinates(obj.faces(:,1),:);
+            faceCoordinates2 = obj.coordinates(obj.faces(:,2),:);
+            faceCoordinates3 = obj.coordinates(obj.faces(:,3),:);
+
+            % Project
+            %--------------------------------------------------------------
+            for i=1:size(points,1)
+                ni = pointNormals(i,:);   
+                coordi = points(i,:);
+                        
+                distancej = -obj.resolution*1e10;
+                
+                for j = 1:obj.numFaces
+                    
+                    % things for face-j
+                    nf = faceNormals(j,:);
+                    coord1 = faceCoordinates1(j,:);
+                    coord2 = faceCoordinates2(j,:);
+                    coord3 = faceCoordinates3(j,:);
+                    
+                    % intersection algo -
+                    %--------------------------------------------------
+                    % there was some brutal overhead using the func
+                    
+                    distance = - (nf(1)*(coordi(1)-coord1(1))+...
+                                  nf(2)*(coordi(2)-coord1(2))+...
+                                  nf(3)*(coordi(3)-coord1(3)))/...
+                               (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
+                    
+                    % point of intersection
+                    intersectionCoord = coordi + distance*ni;
+                    
+                    v1 = coord2-coord1;            % edge vector 1
+                    v2 = coord3-coord1;            % edge vector 2
+                    v0 = intersectionCoord-coord1; % vector to intersection point
+                    
+                    % calc parametric coordinates of intersection point
+                    dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
+                    dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
+                    dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
+                    dotv0v2 = v0(1)*v2(1) + v0(2)*v2(2) + v0(3)*v2(3);
+                    dotv0v1 = v0(1)*v1(1) + v0(2)*v1(2) + v0(3)*v1(3);
+                    denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
+                    
+                    xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
+                    yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
+                    
+                    if      xj > -threshold && ...
+                            yj > -threshold && ...
+                     1-(xj+yj) > -threshold && ...
+                      distance > distancej
+                      if i ==1
+                         disp([xj,yj,1-xj-yj]) 
+                      end
+                        projectedPoints(i,1:3) = intersectionCoord;
+                        distancej = distance;
+                    end
+                    
+                end
+            end
+                
+        end
+        
         function [] = checkValid(obj)
             
             % test pairs
@@ -2773,6 +2625,174 @@ classdef SurfaceMesh
             
         end
         
+        function faceShading = shadowedFaces(obj, lightDirection)
+        % finds shadowed faces based on lighting direction
+        %------------------------------------------------------------------
+        % uses a 2d background mesh to search for possible shadowing. The 
+        % search is limited to faces who's normals have a negative dot 
+        % product with the light direction.
+        %
+        %------------------------------------------------------------------
+        % Inputs:
+        %   lightDirection - direction light comes in at
+        %------------------------------------------------------------------
+        % Outputs:
+        %   faceShading ----- scale 0 - 1 giving face shading
+        %------------------------------------------------------------------
+         % reused x1 and x2 badddness
+            if obj.degree>1
+                error('shading only implemented for rectilinear grids')
+            end
+            if ~size(lightDirection,2)==3 || ~size(lightDirection,1)==1
+                error('lightDirection must be 1x3 vector')
+            end
+            lightDirection = lightDirection/norm(lightDirection);
+            
+            threshold = 1e-4;
+            
+            % initialize faces on backside as shadowed
+            faceShading = obj.faceNormals()*lightDirection';
+            faceShading(faceShading<0) = 0;
+            faceShading(faceShading>0) = 1;
+            
+            
+            % some things we'll need and easy aliases
+            faceVertices1 = obj.coordinates(obj.faces(:,1),:); 
+            faceVertices2 = obj.coordinates(obj.faces(:,2),:); 
+            faceVertices3 = obj.coordinates(obj.faces(:,3),:); 
+            faceCentroids = obj.faceCentroids();
+            faceNormals = obj.faceNormals();
+      
+            % construct orthnormal basis for lighting plane
+            %--------------------------------------------------------------
+            z0 = -lightDirection/norm(lightDirection);
+            x0 = [-z0(2), z0(1), 0;...
+                  -z0(3), 0,     z0(1);...
+                   0,    -z0(3), z0(2)];
+            [~,i] = max(dot(x0,x0,2));
+            x0 = x0(i,:);
+            x0 = x0/norm(x0);
+            
+            y0 = cross(z0,x0);
+            y0 = y0/norm(y0);
+            
+            % coordinates in new basis
+            x0 = faceCentroids*x0'; % parametric coord 1
+            y0 = faceCentroids*y0'; % parametric coord 2
+            z0 = faceCentroids*z0'; % parametric coord 3 (height off plane)
+
+            % construct background mesh, group face-centroids by mesh-cell
+            %--------------------------------------------------------------
+            Nsteps = ceil(min(max(x0)-min(x0),max(y0)-min(y0))/obj.resolution/2.0);
+
+            x1 = x0-min(x0)+obj.resolution;
+            x1 = x1/(max(x1)+obj.resolution)*Nsteps;
+            
+            y1 = y0-min(y0)+obj.resolution;
+            y1 = y1/(max(y1)+obj.resolution)*Nsteps;
+            
+            faceIndices = 1:obj.numFaces;
+          
+            meshIndex = Nsteps*floor(y1)+ceil(x1);
+            
+            cellNodes{Nsteps^2}=[];
+            for i = 1:Nsteps^2
+                cellNodes{i} = faceIndices(meshIndex==i);
+            end
+            tempCellNodes = cellNodes;
+            
+            for i = 1:Nsteps^2
+                if i > Nsteps
+                    if rem(i,Nsteps)~=1
+                        cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps-1}];
+                    end
+                    cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps}];
+                    if rem(i,Nsteps)~=0
+                        cellNodes{i} = [cellNodes{i},tempCellNodes{i-Nsteps+1}];
+                    end
+                end
+                if i <= Nsteps^2-Nsteps
+                    if rem(i,Nsteps)~=1
+                        cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps-1}];
+                    end
+                    cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps}];
+                    if rem(i,Nsteps)~=0
+                        cellNodes{i} = [cellNodes{i},tempCellNodes{i+Nsteps+1}];
+                    end
+                end
+                if rem(i,Nsteps)~=1
+                    cellNodes{i} = [cellNodes{i},tempCellNodes{i-1}];
+                end
+                if rem(i,Nsteps)~=0
+                    cellNodes{i} = [cellNodes{i},tempCellNodes{i+1}];
+                end
+            end
+            
+         
+            % check for shadowing
+            %--------------------------------------------------------------
+            for i=1:obj.numFaces
+                
+                if faceShading(i)==0
+                    
+                    coordi = faceCentroids(i,:);
+                    ni  = lightDirection;
+                    
+                    candidates = cellNodes{meshIndex(i)};
+                    numCandidates = length(candidates);
+                    
+                    candidateNormals   = faceNormals(candidates,:);        
+                    candidateVertices1 = faceVertices1(candidates,:); 
+                    candidateVertices2 = faceVertices2(candidates,:); 
+                    candidateVertices3 = faceVertices3(candidates,:); 
+                    
+                    for j = 2:numCandidates
+                        
+                        nf     = candidateNormals(j,:);    
+                        coord1 = candidateVertices1(j,:);  
+                        coord2 = candidateVertices2(j,:); 
+                        coord3 = candidateVertices3(j,:); 
+                        
+                        % intersection algo - "inlined"
+                        %--------------------------------------------------
+                        distance = - (nf(1)*(coordi(1)-coord1(1))+...
+                            nf(2)*(coordi(2)-coord1(2))+...
+                            nf(3)*(coordi(3)-coord1(3)))/...
+                            (nf(1)*ni(1)+nf(2)*ni(2)+nf(3)*ni(3));
+                        
+                        % point of intersection
+                        intersectionCoord = coordi + distance*ni;
+                        
+                        v1 = coord2-coord1;            % edge vector 1
+                        v2 = coord3-coord1;            % edge vector 2
+                        v0 = intersectionCoord-coord1; % vector to intersection point
+                        
+                        % calc parametric coordinates of intersection point
+                        dotv2v2 = v2(1)*v2(1) + v2(2)*v2(2) + v2(3)*v2(3);
+                        dotv1v2 = v1(1)*v2(1) + v1(2)*v2(2) + v1(3)*v2(3);
+                        dotv1v1 = v1(1)*v1(1) + v1(2)*v1(2) + v1(3)*v1(3);
+                        dotv0v2  =  v0(1)*v2(1) + v0(2)*v2(2) +  v0(3)*v2(3);
+                        dotv0v1  =  v0(1)*v1(1) + v0(2)*v1(2) +  v0(3)*v1(3);
+                        denom = dotv1v2 ^ 2 - dotv1v1 * dotv2v2;
+                        
+                        xj = (dotv1v2 * dotv0v2 - dotv2v2 * dotv0v1)/denom;
+                        yj = (dotv1v2 * dotv0v1 - dotv1v1 * dotv0v2)/denom;
+                        
+                        if       xj  > -threshold && ...
+                                 yj  > -threshold && ...
+                           1-(xj+yj) > -threshold && ...
+                           z0(candidates(j))>z0(i)
+                       
+                            faceShading(i)=1;
+                            break
+                            
+                        end
+                        
+                        
+                    end
+                end
+            end 
+        end
         function plot(obj,varargin)
         % plot utility for the surfaceMesh
         %------------------------------------------------------------------

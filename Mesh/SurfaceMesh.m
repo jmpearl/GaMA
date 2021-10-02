@@ -161,6 +161,7 @@ classdef SurfaceMesh
                 obj.surfaceArea = obj.calculateSurfaceArea();
                 obj.resolution = obj.calculateResolution(); 
                 
+                % clear out any funk
                 if any(obj.vertexHalfEdges==0)
                     warning('dead vertices detected ... attempting to cull and recover the mesh')
                     obj = obj.cleanDeadVertices();
@@ -184,11 +185,11 @@ classdef SurfaceMesh
             disp(newVertexIndices(end))
             disp("")
             disp("-----------------------------")
-            for i = 1:length(oldVertexIndices)
-                
-                obj = obj.replaceHalfEdgeVertex(oldVertexIndices(i),...
-                                                newVertexIndices(i));
-            end
+            %for i = 1:length(oldVertexIndices)
+            max(newVertexIndices)
+            obj = obj.replaceHalfEdgeVertex(oldVertexIndices,...
+                                            newVertexIndices);
+            %end
             obj.coordinates = obj.coordinates(oldVertexIndices,:);
             obj.vertexHalfEdges = obj.vertexHalfEdges(oldVertexIndices,:);
             
@@ -765,7 +766,7 @@ classdef SurfaceMesh
                 % each node might be the vertex-1 for multiple faces so we
                 % gotta loop over the faces.
                 %-------------------------------------------
-                % (Nix1)' * ( (NixNg) .* Nix1)
+                % (Nix1)' + ( (NixNg) .* Nix1)
                 for i = 1:obj.numFaces
                     nodeIndices = obj.faces(i,:); 
                     areaVectors(nodeIndices,1) = areaVectors(nodeIndices,1) + (phi.*Ax(:,i))'*w;
@@ -926,6 +927,12 @@ classdef SurfaceMesh
             resolution = sqrt(sum(A)/size(A,1));
             
         end
+        function obj = center(obj)
+        % resets coordinate origin to centroid of body
+        %------------------------------------------------------------------
+            obj.coordinates = obj.coordinates - obj.centroid;
+            obj.centroid = [0,0,0];
+        end
         
         function [ptsq,Aq] = createQuadrature(obj,degreeOfExactness)
         % returns quadrature points and assoc area vectors for different
@@ -1045,7 +1052,6 @@ classdef SurfaceMesh
             end
             
         end
-        
         function inside = isInsideRigorous(obj,coords)
         % returns true if points are inside mesh (analytic)
         %------------------------------------------------------------------
@@ -1123,9 +1129,11 @@ classdef SurfaceMesh
             meshTemp = obj;
             meshTemp = meshTemp.flatten();
             
-            
+            % fix this to take care of the case when we want more elements
             if (altitude < obj.resolution*5)
-                meshTemp = meshTemp.coarsen(numSamplePoints*2);
+                if (numSamplePoints<obj.numVertices)
+                    meshTemp = meshTemp.coarsen(numSamplePoints*2);
+                end
                 meshTemp.coordinates = meshTemp.coordinates + altitude*meshTemp.vertexNormals();
             else  
                 
@@ -1207,6 +1215,7 @@ classdef SurfaceMesh
             end
             
         end
+        
         function obj = setNumFaces(obj,numFaces)
         % wrapper to refine/coarsen to a desired number of faces
         %------------------------------------------------------------------
@@ -1244,19 +1253,53 @@ classdef SurfaceMesh
             flipStack = linspace(1,obj.numHalfEdges,obj.numHalfEdges);
             flipStack = flipStack(flipStack < obj.pair');
             stackLength = length(flipStack);
+            stackThresh=length(flipStack)-10000;
             
             while stackLength>=1
+                
                 he1 = flipStack(stackLength);
                 flip = obj.flipCriterion(he1);
+                
+                if stackLength < stackThresh
+                    disp(stackLength)
+                    stackThresh = stackThresh-10000;
+                end
+                
                 if flip
+                    % edgeflip first block duplicates
+                    %----------------------------------------------
                     he2 = obj.next(he1);
                     he3 = obj.next(he2);
                     he4 = obj.pair(he1);
                     he5 = obj.next(he4);
                     he6 = obj.next(he5);
-                    
-                    obj = obj.flipEdge(he1);
-                    flipStack=[flipStack(1:stackLength),he4,he3,he6];
+
+                    % check if we're going to mess up vertex pairing
+                    if obj.vertexHalfEdges(obj.ends(he1))==he1
+                        obj.vertexHalfEdges(obj.ends(he1)) = he6;
+                    end
+                    if obj.vertexHalfEdges(obj.ends(he4))==he4
+                        obj.vertexHalfEdges(obj.ends(he4)) = he3;
+                    end
+            
+                    % switch which vertices split edges point to
+                    obj.ends(he1) = obj.ends(he5);
+                    obj.ends(he4) = obj.ends(he2);
+            
+                    % fix the pairing 
+                    he5pair = obj.pair(he5);
+                    he2pair = obj.pair(he2);
+           
+                    obj.pair(he5) = he2;
+                    obj.pair(he2) = he5;
+            
+                    obj.pair(he5pair) = he1;
+                    obj.pair(he2pair) = he4;
+            
+                    obj.pair(he1) = he5pair;
+                    obj.pair(he4) = he2pair;
+                    %-----------------------------------------------
+                    flipStack(stackLength+1:stackLength+3)=[he4,he3,he6];
                     stackLength=stackLength+3;
                 else
                     stackLength=stackLength-1;
@@ -1271,12 +1314,6 @@ classdef SurfaceMesh
             obj.faceFields = [];
                      
         end  
-        function obj = center(obj)
-        % resets coordinate origin to centroid of body
-        %------------------------------------------------------------------
-            obj.coordinates = obj.coordinates - obj.centroid;
-            obj.centroid = [0,0,0];
-        end
         function obj = curve(obj,mesh)
         % projects nodes of  a degree > 1 mesh onto a finer mesh
         %------------------------------------------------------------------
@@ -1456,9 +1493,7 @@ classdef SurfaceMesh
                 elseif degree ~= 1
                     error('invalid mesh degree specificied, must be 1-4')
                 end
-                  
-                    
-                
+
             end
             
         end
@@ -1526,25 +1561,36 @@ classdef SurfaceMesh
             end
             
             obj = obj.flatten();
-            obj = obj.edgeFlipAll();
+            %obj = obj.edgeFlipAll();
             
             vertexNewIndices   = zeros(obj.numVertices,1);
             vertexFlags        = zeros(obj.numVertices,1);
             halfEdgeNewIndices = zeros(obj.numHalfEdges,1);
             halfEdgeFlags      = zeros(obj.numHalfEdges,1);
             
+            % we'll use length as a metric to edge collapse
             lengths = obj.halfEdgeLengths();
+            [~,sortIndex] = sort(lengths);
+            avgLength = mean(lengths);
+            resortStep = 1000;
+            
+            
             thresholdCullLowSpokes = floor(obj.numVertices/2);
             i=1;
+            iSortVector=1;
             
-            progressStep = 10;
-            progressThreshold0 = numDeletedVertices/10;
-            progressThreshold = progressThreshold0;
-            
+            progressIncrement = 1;
+            progressStep = progressIncrement;
+            progressThreshold0 = 1000;%numDeletedVertices*progressIncrement/100;
+            progressThreshold = 1000;%progressThreshold0;
+            progressIncrement = 100*progressThreshold/numDeletedVertices;
+            progressStep = progressIncrement;
+
             while i <= numDeletedVertices
+                
                 if i >= progressThreshold
                     disp(['    ',num2str(progressStep),'%'])
-                    progressStep = progressStep+10;
+                    progressStep = progressStep+progressIncrement;
                     progressThreshold = progressThreshold+progressThreshold0;
                 end
                 % send low valence vertices to front of the line
@@ -1558,15 +1604,22 @@ classdef SurfaceMesh
                      lengths(zeroedHalfEdges);
                      lengths(zeroedHalfEdges) = 0;
                      thresholdCullLowSpokes = thresholdCullLowSpokes+floor(thresholdCullLowSpokes/2);
+                     
                  end
                 
-             
-                [~,he1] = min(lengths);
-                he4 = obj.pair(he1);
+                if mod(iSortVector,resortStep)==0  
+                    [~,sortIndex] = sort(lengths);
+                    avgLength = mean(lengths,'omitnan');
+                    iSortVector=1;
+                end
+
+                he1 = sortIndex(iSortVector);
+                he4=obj.pair(he1);
+
+                iSortVector = iSortVector+1;
                 
-                isValid = obj.isValidCollapse(he1);
-                if isValid
-                    
+                if (lengths(he1) < avgLength) && obj.isValidCollapse(he1)
+
                     % select collapse direction
                     %------------------------------------------------------
                     p1 = obj.ends(he1);
@@ -1670,17 +1723,82 @@ classdef SurfaceMesh
                     lengths(modifiedEdges)=modifiedLengths;
                 
                     % check for edge flip and recalc length for modified region
-                    startEdge = obj.vertexHalfEdges(p3);
-                    [obj,modifiedEdges] = obj.edgeFlipModifiedRegion(startEdge);
+                    hei = obj.vertexHalfEdges(p3);
+                    %[obj,modifiedEdges] = obj.edgeFlipModifiedRegion(startEdge);
+                    %------------------------------------------------------
+                    % add in all incoming spokes
+                    nexti = obj.next(hei);
+                    pairi = obj.pair(nexti);
+                    modifiedEdges = [];
+                    flipStack = [hei,pairi];
+                    while pairi ~= hei
+                        nexti = obj.next(pairi);
+                        pairi = obj.pair(nexti);
+                        flipStack = [flipStack,pairi];
+                    end
+                    
+                    % test them all for edge flip and track modified edges
+                    stackLength = length(flipStack);
+                    while stackLength>=1
+                        he1 = flipStack(stackLength);
+                        flip = obj.flipCriterion(he1);
+                        if flip
+                            he2 = obj.next(he1);
+                            he3 = obj.next(he2);
+                            he4 = obj.pair(he1);
+                            he5 = obj.next(he4);
+                            he6 = obj.next(he5);
+                            
+                            modifiedEdges=[modifiedEdges,...
+                                he1,he2,he3,he4,he5,he6];
+                            
+                            %obj = obj.flipEdge(he1);
+                            %----------------------------------------------
+                            
+                            % check if we're going to mess up vertex pairing
+                            if obj.vertexHalfEdges(obj.ends(he1))==he1
+                                obj.vertexHalfEdges(obj.ends(he1)) = he6;
+                            end
+                            if obj.vertexHalfEdges(obj.ends(he4))==he4
+                                obj.vertexHalfEdges(obj.ends(he4)) = he3;
+                            end
+                            
+                            % switch which vertices split edges point to
+                            obj.ends(he1) = obj.ends(he5);
+                            obj.ends(he4) = obj.ends(he2);
+                            
+                            % fix the pairing
+                            he5pair = obj.pair(he5);
+                            he2pair = obj.pair(he2);
+                            
+                            obj.pair(he5) = he2;
+                            obj.pair(he2) = he5;
+                            
+                            obj.pair(he5pair) = he1;
+                            obj.pair(he2pair) = he4;
+                            
+                            obj.pair(he1) = he5pair;
+                            obj.pair(he4) = he2pair;
+                            %----------------------------------------------
+                            
+                            flipStack(stackLength+1:stackLength+3)=[he4,he3,he6];
+                            stackLength=stackLength+3;
+                        else
+                            stackLength=stackLength-1;
+                        end
+                    end
+                    modifiedEdges=unique(modifiedEdges);
+                    
+                    %------------------------------------------------------
                     modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
                     lengths(modifiedEdges)=modifiedLengths;
                     lengths(removedHalfEdges)=nan;
                     
                     i = i+1;
                 else
-                    lengths(he1) = lengths(he1)*2;
-                    lengths(he4) = lengths(he4)*2;
-                end   
+                    %lengths(he1) = lengths(he1)*2;
+                    %lengths(he4) = lengths(he4)*2;
+                end
                 
             end
             
@@ -1756,8 +1874,8 @@ classdef SurfaceMesh
                 if strcmp(method,"cotan") || strcmp(method,"cot")
                     method = "cotangent";
                 end
-                if ~strcmp(method,"cotangent")  && ~strcmp(method,"uniform")
-                    error('incorrect method specified "cotangent" or "uniform"')
+                if ~strcmp(method,"cotangent")  && ~strcmp(method,"uniform") && ~strcmp(method,"area")
+                    error('incorrect method specified "cotangent", "uniform" or "area"')
                 end
             elseif nargin == 1 || nargin > 4
                 error('incorrect number of inputs: specific number of smoothing steps and optionally smoothing method')
@@ -1777,6 +1895,20 @@ classdef SurfaceMesh
                     p1 = obj.ends(1:3:end);
                     p2 = obj.ends(2:3:end);
                     p3 = obj.ends(3:3:end);
+                    
+                    % for area weighting
+                    A1 = ones(obj.numFaces,1);
+                    A2 = ones(obj.numFaces,1);
+                    A3 = ones(obj.numFaces,1);
+                    if strcmp(method,'area')
+                        pointAreas = obj.vertexAreaVectors();
+                        pointAreas = sqrt(pointAreas(:,1).^2+...
+                                          pointAreas(:,2).^2+...
+                                          pointAreas(:,3).^2);
+                        A1 = pointAreas(p1);
+                        A2 = pointAreas(p2);
+                        A3 = pointAreas(p3);
+                    end
                     
                     % coordinates of vertices
                     coord1 = tmpCoords(p1,:);
@@ -1802,9 +1934,9 @@ classdef SurfaceMesh
                         w3 = ones(obj.numFaces,1);
                     end
                     
-                    d1 = -w2.*v3 + w3.*v1;
-                    d2 =  w1.*v2 - w3.*v1;
-                    d3 =  w2.*v3 - w1.*v2;
+                    d1 = -w2.*v3.*A3 + w3.*v1.*A2;
+                    d2 =  w1.*v2.*A3 - w3.*v1.*A1;
+                    d3 =  w2.*v3.*A1 - w1.*v2.*A2;
                     
                     % need to loop to deal with repeat entries
                     for i = 1:obj.numFaces
@@ -1812,10 +1944,10 @@ classdef SurfaceMesh
                         delta(p1(i),:) = delta(p1(i),:) + d1(i,:);
                         delta(p2(i),:) = delta(p2(i),:) + d2(i,:);
                         delta(p3(i),:) = delta(p3(i),:) + d3(i,:);
-                        
-                        wsum(p1(i)) = wsum(p1(i)) + w3(i)+w2(i);
-                        wsum(p2(i)) = wsum(p2(i)) + w3(i)+w1(i);
-                        wsum(p3(i)) = wsum(p3(i)) + w2(i)+w1(i);
+
+                        wsum(p1(i)) = wsum(p1(i)) + w3(i)*A3(i)+w2(i)*A2(i);
+                        wsum(p2(i)) = wsum(p2(i)) + w3(i)*A3(i)+w1(i)*A1(i);
+                        wsum(p3(i)) = wsum(p3(i)) + w2(i)*A1(i)+w1(i)*A2(i);
                     end
                     
                     tmpCoords = tmpCoords + 1./wsum.*delta;
@@ -2036,7 +2168,7 @@ classdef SurfaceMesh
                 end               
             end
             obj = obj.initializeFromFaceData(tempVertices,tempFaces);
-            obj = obj.smooth(1);
+            obj = obj.smooth(1,'cotan',false);
             obj = obj.edgeFlipAll();
         end
         function obj = refineFeatures(obj,fineMesh, numIters, alphaLimit, maxLevel)
@@ -2051,15 +2183,20 @@ classdef SurfaceMesh
         %------------------------------------------------------------------
             disp('--------------------------------------------------')
             disp(['Refining features, initial numFaces: ',num2str(obj.numFaces)])
-            if nargin == 1
+            if nargin == 2
+                disp('nargin 1')
                 alphaLimit = 9;
                 numIters = 1;
                 maxLevel = 1;
-            elseif nargin == 2
+            elseif nargin == 3
+                disp('nargin 2')
                 alphaLimit = 9;
                 maxLevel = 4;
-            elseif nargin == 3
+            elseif nargin == 4
+                disp('nargin 3')
                 maxLevel = 4;
+            elseif nargin > 5
+                error('incorrect number of inputs')
             end
             
             
@@ -2174,6 +2311,7 @@ classdef SurfaceMesh
             % Project
             %--------------------------------------------------------------
             for i=1:size(points,1)
+                %disp([i,size(points,1)]
                 threshold = 1e-4;
                 ni = pointNormals(i,:);    
                 coordi = points(i,:); 
@@ -2519,13 +2657,14 @@ classdef SurfaceMesh
             if nargin <3
                 precision = 8;
             end
+            precisionStr = num2str(precision);
             
             %vtk flags for rectilinear and quadratic triangles
             if obj.degree == 1
-                cellType = '5\n';
+                cellType = 5*ones(obj.numFaces,1);
                 numLocalNodes = 3;
             elseif obj.degree == 2 
-                cellType = '22\n';
+                cellType = 22*ones(obj.numFaces,1);
                 numLocalNodes = 6;
             else 
                 error('Degree greater than 2 not supported')
@@ -2543,31 +2682,26 @@ classdef SurfaceMesh
             % Write Node Data
             %--------------------------------------------------------------
             fprintf(fileID,['POINTS ',num2str(obj.numNodes),' float\n']);
-            for i = 1:obj.numNodes
-                outputi = [num2str(obj.coordinates(i,:),precision),'\n'];
-                fprintf(fileID, outputi );
-            end
-            
+            formatSpec = ['%.',precisionStr,'g %.',precisionStr,'g %.',precisionStr,'g\n'];
+            fprintf(fileID,formatSpec,obj.coordinates');
             % Write Cells
             %--------------------------------------------------------------
             fprintf(fileID,['CELLS ',num2str(obj.numFaces),' ',num2str(obj.numFaces*(numLocalNodes+1)),'\n']);
-            for i = 1:obj.numFaces
-                if obj.degree == 1
-                    outputi = [num2str([length(obj.faces(i,:)),obj.faces(i,:)-1]),'\n'];
-                elseif obj.degree == 2
-                    facei = obj.faces(i,[1,3,6,2,5,4])-1;
-                    outputi = [num2str([length(obj.faces(i,:)),facei]),'\n'];
-                end
-                fprintf(fileID,outputi);
+            
+            if obj.degree == 1
+                facesOut = [3*ones(obj.numFaces,1),obj.faces-1]';
+                formatSpecFaces = '%.0f %.0f %.0f %.0f\n';
+            elseif obj.degree == 2
+                facesOut = [6*ones(obj.numFaces,1),obj.faces(:,[1,3,6,2,5,4])-1]';
+                formatSpecFaces = '%.0f %.0f %.0f %.0f %.0f %.0f %.0f\n';
+                
             end
+            fprintf(fileID,formatSpecFaces,facesOut);
             
             % Write CellTypes
             %--------------------------------------------------------------
             fprintf(fileID,['CELL_TYPES ',num2str(obj.numFaces),'\n']);
-            for i = 1:obj.numFaces
-                fprintf(fileID,cellType);
-                
-            end
+            fprintf(fileID,'%.0f\n',cellType);
             
             % Write Cell Data
             %--------------------------------------------------------------
@@ -2576,10 +2710,7 @@ classdef SurfaceMesh
             vtkDataHeader = 'VECTORS faceNormals float\n';
             fprintf(fileID,vtkDataHeader);
             normals = obj.faceNormals();
-            for j = 1:obj.numFaces
-                outputi = [num2str(normals(j,:),precision),'\n'];
-                fprintf(fileID,outputi);
-            end
+            fprintf(fileID,formatSpec,normals');
             
             for i = 1:size(obj.faceFields,2)
                 if size(obj.faceFields{i}.data,2)==1
@@ -2815,6 +2946,7 @@ classdef SurfaceMesh
             color1 = [1,1,0];
             lighting = 1;
             shadowingOn = 1;
+            
             % parse keywords
             %--------------------------------------------------------------
             if length(varargin)==1
@@ -3160,17 +3292,49 @@ classdef SurfaceMesh
         %   iVertexOld -- id of vertex being replaced
         %   iVertexNew -- id of vertex being sub-ed in
         %------------------------------------------------------------------
-            startingEdge = obj.vertexHalfEdges(iVertexOld);
-            obj.ends(startingEdge) = iVertexNew;
             
-            nexti = obj.next(startingEdge);
-            pairi = obj.pair(nexti);
+            % original code
+            if length(iVertexOld)==1
+                startingEdge = obj.vertexHalfEdges(iVertexOld);
+                obj.ends(startingEdge) = iVertexNew;
             
-            while  pairi ~= startingEdge
-                obj.ends(pairi) = iVertexNew;
-                nexti = obj.next(pairi);
+                nexti = obj.next(startingEdge);
                 pairi = obj.pair(nexti);
+            
+                while  pairi ~= startingEdge
+                    obj.ends(pairi) = iVertexNew;
+                    nexti = obj.next(pairi);
+                    pairi = obj.pair(nexti);
+                end
+              
+            % for big data we want to vectorize   
+            else
+                startingEdge = obj.vertexHalfEdges(iVertexOld);
+                obj.ends(startingEdge) = iVertexNew;
+                
+                nexti = obj.next(startingEdge);    
+                pairi = obj.pair(nexti);
+   
+                i=1;
+                while  any(pairi ~= startingEdge)
+                    keepLoops = pairi ~= startingEdge;  
+                    disp(['Spoke: ',num2str(i)])
+                    disp(['  numEdgeLoops: ',num2str(length(keepLoops))])
+                    max(iVertexNew)
+                    pairi = pairi(keepLoops); 
+                    startingEdge = startingEdge(keepLoops); 
+                    iVertexNew = iVertexNew(keepLoops);
+                    %ids = ids(keepLoops);
+                    
+                    obj.ends(pairi) = iVertexNew;
+                                      
+                    nexti = obj.next(pairi);
+                    pairi = obj.pair(nexti);
+                    i=i+1;
+                end   
+            
             end
+                
             
         end
         function validity = isValidCollapse(obj,he1)
@@ -3272,8 +3436,36 @@ classdef SurfaceMesh
                     
                     modifiedEdges=[modifiedEdges,...
                         he1,he2,he3,he4,he5,he6];
-                        
-                    obj = obj.flipEdge(he1);
+                    
+                    %obj = obj.flipEdge(he1);
+                    %------------------------------------------------------
+           
+                    % check if we're going to mess up vertex pairing
+                    if obj.vertexHalfEdges(obj.ends(he1))==he1
+                        obj.vertexHalfEdges(obj.ends(he1)) = he6;
+                    end
+                    if obj.vertexHalfEdges(obj.ends(he4))==he4
+                        obj.vertexHalfEdges(obj.ends(he4)) = he3;
+                    end
+            
+                    % switch which vertices split edges point to
+                    obj.ends(he1) = obj.ends(he5);
+                    obj.ends(he4) = obj.ends(he2);
+            
+                    % fix the pairing 
+                    he5pair = obj.pair(he5);
+                    he2pair = obj.pair(he2);
+           
+                    obj.pair(he5) = he2;
+                    obj.pair(he2) = he5;
+            
+                    obj.pair(he5pair) = he1;
+                    obj.pair(he2pair) = he4;
+            
+                    obj.pair(he1) = he5pair;
+                    obj.pair(he4) = he2pair;
+                    %------------------------------------------------------
+                    
                     flipStack=[flipStack(1:stackLength),he4,he3,he6];
                     stackLength=stackLength+3;
                 else

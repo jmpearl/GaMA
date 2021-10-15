@@ -68,16 +68,60 @@ classdef SurfaceMesh
         
     end
     methods
-        function obj = SurfaceMesh(fileName)
-            
-            if nargin==1 && contains(fileName,'obj')
-                [tempVertices,tempFaces] = obj.readOBJ(fileName);
-                obj = obj.initializeFromFaceData(tempVertices,tempFaces);
-            elseif nargin > 1
-                error('incorrect number of inputs')
-            elseif nargin == 1 
-                error('unsupported mesh file format')
+        function obj = SurfaceMesh(mesh)
+        % constructor 
+        %------------------------------------------------------------------
+        % Input:
+        %   mesh --- can be either a obj file name or another mesh object
+        %------------------------------------------------------------------   
+            if  nargin > 1
+                    error('incorrect number of inputs')
             end
+            
+            if isa(mesh,'SurfaceMesh') || isa(mesh,'HandleSurfaceMesh')
+                
+                obj=obj.copy(mesh);
+                
+            elseif isstring(mesh) || ischar(mesh)
+                
+                if contains(mesh,'obj')
+                    [tempVertices,tempFaces] = obj.readOBJ(mesh);
+                    obj=obj.initializeFromFaceData(tempVertices,tempFaces);
+                else
+                    error('currently only supports obj files')
+                end
+                
+            end
+        end
+        function obj = copy(obj,mesh)
+        % implemention of deep copy constructor
+        %------------------------------------------------------------------
+        
+            obj.next = mesh.next;
+            obj.pair = mesh.pair;
+            obj.ends = mesh.ends;
+            obj.vertexHalfEdges = mesh.vertexHalfEdges;
+            obj.coordinates = mesh.coordinates;
+            obj.faces = mesh.faces;      
+            
+            obj.faceFields = mesh.faceFields;
+            obj.nodeFields = mesh.nodeFields;
+            
+            obj.isCurved = mesh.isCurved;
+            obj.degree = mesh.degree;
+            
+            obj.volume = mesh.volume;
+            obj.surfaceArea = mesh.surfaceArea;
+            obj.centroid = mesh.centroid;
+            obj.resolution = mesh.resolution;
+            
+            obj.numNodes = mesh.numNodes;
+            obj.numVertices = mesh.numVertices;
+            obj.numEdges = mesh.numEdges;
+            obj.numHalfEdges = mesh.numHalfEdges;
+            obj.numFaces  = mesh.numFaces;
+            obj.numNodeFields = mesh.numNodeFields;
+            obj.numFaceFields = mesh.numFaceFields;
             
         end
         function obj = initializeFromFaceData(obj,tempVertices,tempFaces)
@@ -1561,7 +1605,7 @@ classdef SurfaceMesh
             end
             
             obj = obj.flatten();
-            %obj = obj.edgeFlipAll();
+            obj = obj.edgeFlipAll();
             
             vertexNewIndices   = zeros(obj.numVertices,1);
             vertexFlags        = zeros(obj.numVertices,1);
@@ -1881,7 +1925,7 @@ classdef SurfaceMesh
                 error('incorrect number of inputs: specific number of smoothing steps and optionally smoothing method')
             end
             if nargin ~= 4
-                projectPoints=true;
+                projectPoints=false;
             end
             if obj.degree == 1
                 for j = 1:N
@@ -2518,7 +2562,19 @@ classdef SurfaceMesh
                 
         end
         
-        function [] = checkValid(obj)
+        function passed = isValid(obj)
+        % alias for check valid 
+        %------------------------------------------------------------------
+            passed = obj.checkValid();
+        end  
+        function passed = checkValid(obj)
+        % performs some simple tests to see if our mesh is invalid
+        %------------------------------------------------------------------
+        % If this passes is doesn't necessarily mean the mesh is valid, but
+        % it will tell you if somethings went wrong
+        %------------------------------------------------------------------
+        
+            passed = true;
             
             % test pairs
             pairs = obj.pair;
@@ -2529,19 +2585,21 @@ classdef SurfaceMesh
                 disp(' ')
                 disp('    FAIL: pairs of pairs invalid')
                 disp(' ')
+                passed=false;
             end
             
             
             % test face loops
-            next = indices(3:3:obj.numHalfEdges);
+            nexti = indices(3:3:obj.numHalfEdges);
             for i = 1:3
-                next = obj.next(next);
-                if all(next == indices(i:3:obj.numHalfEdges))
+                nexti = obj.next(nexti);
+                if all(nexti == indices(i:3:obj.numHalfEdges))
                     disp('    pass: nexts valid')
                 else
                     disp(' ')
                     disp(['    FAIL: next invalid ', i])
                     disp(' ')
+                    passed=false;
                 end
             end
             
@@ -2549,17 +2607,17 @@ classdef SurfaceMesh
             % test vertex loops
             maxIters = 20;          
             startingEdge = obj.vertexHalfEdges;
-            next = obj.next(startingEdge);
-            pair = obj.pair(next);
+            nexti = obj.next(startingEdge);
+            pairi = obj.pair(nexti);
             iters = 0;
-            while  any(pair ~= startingEdge)
+            while  any(pairi ~= startingEdge)
                 iters = iters+1;
-                keepLoops = pair ~= startingEdge;
-                pair = pair(keepLoops); 
+                keepLoops = pairi ~= startingEdge;
+                pairi = pairi(keepLoops); 
                 startingEdge = startingEdge(keepLoops); 
 
-                next = obj.next(pair);
-                pair = obj.pair(next);
+                nexti = obj.next(pairi);
+                pairi = obj.pair(nexti);
                 if iters==maxIters 
                     break
                 end
@@ -2572,6 +2630,7 @@ classdef SurfaceMesh
                 disp(' ')
             else
                 disp('    pass: no infinite vertex loops ')
+                passed=false;
             end
             
             % test vertices point to right half edges
@@ -2585,6 +2644,7 @@ classdef SurfaceMesh
                 disp('          vertex numbers:')
                 disp(num2str(indices(newIndices ~= indices)))
                 disp(' ')
+                passed=false;
 
             end
      

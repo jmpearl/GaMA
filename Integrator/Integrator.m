@@ -65,7 +65,7 @@ classdef Integrator
         %   dx - state vector derives
         %------------------------------------------------------------------
             
-            %obj.inertialFramePhysicsModels([x(1),x(3),x(5)]);
+            %obj.ThirdBodyGravityModels([x(1),x(3),x(5)])
 
             Rot = [cos(obj.omega*t), -sin(obj.omega*t), 0;
                    sin(obj.omega*t),  cos(obj.omega*t), 0;

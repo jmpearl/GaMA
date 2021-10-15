@@ -1665,14 +1665,13 @@ classdef HandleSurfaceMesh < handle
             % edge collapse metric
             lengths = obj.halfEdgeLengths();
             angleVertices = obj.vertexAverageAngles();
-            %anglesVertices  = obj.vertexAverageAngles();
             anglesHalfEdges = (angleVertices(obj.ends)+angleVertices(obj.ends(obj.pair)))/2;
-            %lengths = anglesHalfEdges;
+            lengths = lengths.*anglesHalfEdges;
             [~,sortIndex] = sort(lengths);
             
             % initialize some parameters
-            thresholdCullLowSpokes = floor(numDeletedVertices/2);
-            thresholdResort = 1000;%floor(numDeletedVertices/10);
+            %thresholdCullLowSpokes = floor(numDeletedVertices/50);
+            thresholdResort = min(5000,numDeletedVertices/10);%floor(numDeletedVertices/2);
             iSortVector=1;
             i=1;
             
@@ -1692,21 +1691,22 @@ classdef HandleSurfaceMesh < handle
                 end
                 
                 % send low valence vertices to front of the line
-                if mod(i,thresholdCullLowSpokes)==0  
-                    allVertexIndices = linspace(1,obj.numVertices,obj.numVertices);
-                    activeVertexIndices = allVertexIndices(vertexFlags==0);
-                    spokeCounts = obj.vertexSpokeCounts(activeVertexIndices);
-                    lowSpokeVertices = activeVertexIndices(spokeCounts <= 4);
-                    zeroedHalfEdges = obj.vertexHalfEdges(lowSpokeVertices);
-                    lengths(zeroedHalfEdges) = 0;
-                    thresholdCullLowSpokes = thresholdCullLowSpokes+floor(thresholdCullLowSpokes/2);  
-                end
+%                 if mod(i,thresholdCullLowSpokes)==0  
+%                     allVertexIndices = linspace(1,obj.numVertices,obj.numVertices);
+%                     activeVertexIndices = allVertexIndices(vertexFlags==0);
+%                     spokeCounts = obj.vertexSpokeCounts(activeVertexIndices);
+%                     lowSpokeVertices = activeVertexIndices(spokeCounts == 3);
+%                     zeroedHalfEdges = obj.vertexHalfEdges(lowSpokeVertices);
+%                     lengths(zeroedHalfEdges) = 0;
+%                     %thresholdCullLowSpokes = thresholdCullLowSpokes+floor(thresholdCullLowSpokes/2);  
+%                 end
                 
                 % update our metric every so often
                 if mod(iSortVector,thresholdResort)==0  
                     isModifiedHalfEdge(isModifiedHalfEdge==1)=0;
                     [~,sortIndex] = sort(lengths);
                     iSortVector=1;
+                    thresholdResort = min(2500,(numDeletedVertices-i)/10);
                 end
 
                 % collapse candidate and its pair
@@ -1722,22 +1722,30 @@ classdef HandleSurfaceMesh < handle
                     %------------------------------------------------------
                     p1 = obj.ends(he1);
                     p3 = obj.ends(he4);
-                
-                    p1Spokes =  obj.spokeHalfEdges(p1);
-                    p3Spokes =  obj.spokeHalfEdges(p3);
-                
-                    p1MeanSpokeLength = mean(lengths(p1Spokes));
-                    p3MeanSpokeLength = mean(lengths(p3Spokes));
-                
-                    if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
-                        temp = he4;
-                        he4 = he1;
-                        he1 = temp;
                     
-                        temp = p3;
-                        p3 = p1;
-                        p1 = temp;
-                    end
+                    %p1NumSpokes = obj.numSpokes(p1);
+                    %p3NumSpokes = obj.numSpokes(p3);
+%                     p1Spokes =  obj.spokeHalfEdges(p1);
+%                     p3Spokes =  obj.spokeHalfEdges(p3);
+%                 
+%                     p1MeanSpokeLength = mean(lengths(p1Spokes));
+%                     p3MeanSpokeLength = mean(lengths(p3Spokes));
+%                 
+%                     if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
+%                     %if p3NumSpokes < p1NumSpokes
+%                         temp = he4;
+%                         he4 = he1;
+%                         he1 = temp;
+%                     
+%                         temp = p3;
+%                         p3 = p1;
+%                         p1 = temp;
+%                     end
+                    
+                    % now p1 and p3 are finalized we need to find the two
+                    % nodes that will have reduced spokes counts after the
+                    % collapse. We'll come back to these at the end.
+                    reducedSpokeNodes = obj.ends(obj.next([he1,he4]));
                     
                     % flag half edges of collapsed faces for removal
                     %------------------------------------------------------
@@ -1778,8 +1786,10 @@ classdef HandleSurfaceMesh < handle
                     obj.replaceHalfEdgeVertex(p1, p3);
                     
                     % average coordinate
-                    %w = angleVertices([p1;p3]).^3;
-                    %obj.coordinates(p3,:) = (w(1)*obj.coordinates(p3,:)+w(2)*obj.coordinates(p1,:))/(w(1)+w(2));
+                    % if averageCollapse
+                         w = angleVertices([p1;p3]);
+                         obj.coordinates(p3,:) = (w(1)*obj.coordinates(p1,:)+w(2)*obj.coordinates(p3,:))/(w(1)+w(2));
+                    % end
                     
                     % fix pair connectivity
                     obj.fixCollapsedFacePairs(he1);
@@ -1795,7 +1805,7 @@ classdef HandleSurfaceMesh < handle
                     modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
                     modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +... 
                                       angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
-                    lengths(modifiedEdges)=modifiedLengths;
+                    lengths(modifiedEdges)=modifiedLengths.*modifiedAngles;
                     isModifiedHalfEdge(modifiedEdges) = 1;
                     
                     
@@ -1809,8 +1819,22 @@ classdef HandleSurfaceMesh < handle
                                       angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
                     modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
                     isModifiedHalfEdge(modifiedEdges) = 1;
-                    %lengths(modifiedEdges)=modifiedLengths;
+                    lengths(modifiedEdges)= modifiedLengths.*modifiedAngles;
                     lengths(removedHalfEdges)=nan;
+                    
+                    % check if we create any questionable cycles
+                    % if so, push them to the front of the line. for next
+                    % resort
+                    for j=1:2
+                        pj = reducedSpokeNodes(j);
+                        numSpokes = obj.numSpokes(pj);
+                        if numSpokes == 3
+                            hej = obj.spokeHalfEdges(pj);
+                            lengths(hej) = 0.0;
+                        elseif numSpokes == 2
+                            error("collapse produced a degenerate flap face")
+                        end
+                    end
                     
                     i = i+1;
                 else

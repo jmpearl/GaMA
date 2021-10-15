@@ -156,6 +156,9 @@ classdef VolumeMesh
             
         end
         
+        function obj = smooth(obj)
+        
+        end
         function edges = edges(obj)
         % unique edges within mesh
         %------------------------------------------------------------------

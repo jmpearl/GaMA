@@ -32,7 +32,7 @@ load('unitTetValidationCase.mat')
 tol = 1e-14;
 
 mesh = SurfaceMesh;
-mesh = mesh.initializeFromFaceData(unitTet.vertices,unitTet.faces);
+mesh.initializeFromFaceData(unitTet.vertices,unitTet.faces);
 
 
 if sum(vecnorm(mesh.coordinates-unitTet.vertices,2,2))/...

@@ -1,29 +1,14 @@
-classdef VolumeMesh
+classdef VolumeMesh < handle
 %==========================================================================
 % CLEO - Gravity and Mesh Adaptation Libray for Asteroids and Comets
 % J.M.Pearl 
-% Feb 2021
+% Oct 2021
 %--------------------------------------------------------------------------
-% Array-based implementation of half-edge data structure for tri meshes
+% 
 %--------------------------------------------------------------------------
-% half-edges are ordered in sets of three where each set defines a face 
-% making the assoc. face index implicit. 
 %
-% This class support curvilinear surface definitions up to degree 4 in a
-% limited capacity. The curvilinear feature is primarily designed for the
-% generation of efficient integration rules and would typically be the last
-% step in any mesh manipulation process. For example, the coarsen, refine,
-% and smooth methods do not support curvilinear surface definitions and
-% will either return an error or flatten the mesh. Additionally, methods
-% prefixed with face... vertex... or halfEdge... as well as the edge and
-% isInsideRigorous methods all treat curvilinear meshes as if they are
-% rectilinear -- i.e. they return results as if the faces were flat w/ the
-% same vertices.
 %--------------------------------------------------------------------------
-% Quick note on nomenclature:
-%   In this class, node is used to refer to all the unique computational
-%   nodes. For example a T6 triangle node would be used to refer to the
-%   edge midpoints and vertices.
+%
 %--------------------------------------------------------------------------
 % Abreviations:
 %   I attempted to stick to a common convention but of course that didn't
@@ -40,32 +25,32 @@ classdef VolumeMesh
 %       n ----- unit normal
 %--------------------------------------------------------------------------
     properties (GetAccess=public)
-        coordinates      % coordinates of vertices
-        cells            % cells (indices of faces)
+        coordinates         % coordinates of nodes
+        cells               % cells (node indices)
         
-        surfaceMesh      % surfaceMesh definition
+        surfaceMesh         % surfaceMesh definition
+        isBoundaryNode      % bool array indicating if its a BC face
         
-        faces2Cells      % cells associated w/ faces
-        isBoundaryFace   % bool array indicating if its a BC face
+        cellFields          % cell array of stored fields
+        nodeFields          % cell array of stored fields 
         
-        cellFields       % cell array of stored fields
-        nodeFields       % cell array of stored fields 
+        hasSurfaceMesh      % bool to track if we have a surf def
+        isCurved            % logical to track if mesh is curvilinear
+        degree              % polynomial degree of mesh
+        volume              % total volume
+        surfaceArea         % total surface area
+        centroid            % centroid of enclosed volume
+        resolution          % mean resolution length scale of mesh
         
-        hasSurfaceMesh   % bool to track if we have a surf def
-        isCurved         % logical to track if mesh is curvilinear
-        degree           % polynomial degree of mesh
-        volume           % total volume
-        surfaceArea      % total surface area
-        centroid         % centroid of enclosed volume
-        resolution       % mean resolution length scale of mesh
-        
-        numNodes         % number of nodes for degree>1 meshes
-        numVertices      % number of vertices
-        numEdges         % number of edges
-        numFaces         % number of faces
-        numCells         % number of half edges
-        numNodeFields    % number of node fields
-        numCellFields    % number of face fields
+        numBoundaryVertices % number of vertices on surface
+        numBoundaryNodes    % number of nodes on surface
+        numNodes            % number of nodes for degree>1 meshes
+        numVertices         % number of vertices
+        numEdges            % number of edges
+        numFaces            % number of faces
+        numCells            % number of half edges
+        numNodeFields       % number of node fields
+        numCellFields       % number of face fields
         
     end
     methods
@@ -77,10 +62,212 @@ classdef VolumeMesh
                     obj.hasSurfaceMesh=true;
                 end
             end
+
+            obj.numNodeFields = 0;
+            obj.numCellFields = 0;
+            obj.numCells = 0;
+            obj.numVertices = 0;
+            obj.numNodes = 0;
+            obj.numBoundaryVertices = 0;
+            obj.numBoundaryNodes = 0;
+
             obj.isCurved=false;
             obj.degree = 1;
         end
-        function obj = initializeGrid(obj,...
+        function initializeFromPointCloud(obj,internalCoordinates)
+        % constructions mesh from set of internal vertices
+        %------------------------------------------------------------------
+        % Inputs:
+        %   internalCoordinates -- internal mesh vertices
+        %------------------------------------------------------------------
+
+            obj.coordinates = [obj.surfaceMesh.coordinates;internalCoordinates];
+            obj.numVertices = size(obj.coordinates,1);
+            obj.numNodes = size(obj.coordinates,1);
+            obj.delaunayTriangulation();
+            obj.clipExternalCells();
+
+            obj.isBoundaryNode = zeros(obj.numNodes,1);
+            obj.isBoundaryNode(1:obj.surfaceMesh.numVertices) = 1;
+
+        end
+        function initializeFromSimpleLattice(obj,numInternalVertices)
+        % initializes a volume mesh w/ cubic lattice point distribution
+        %------------------------------------------------------------------
+        % Inputs:
+        %   numInternalVertices -- approximate number of internal vertices
+        %------------------------------------------------------------------
+
+            % approximate lattice spacing
+            ds = (obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+
+            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
+            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
+
+            % Number of elements per dimension
+            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
+            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
+            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
+
+            % Correct so that ds is constant
+            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
+
+            % 1D x-y-z coordinates
+            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
+            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
+            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
+
+            % get the grid
+            [X,Y,Z] = meshgrid(x,y,z);
+
+            % create a buffer 
+            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
+                                                                  obj.surfaceMesh.numVertices);
+            % clip to internal
+            candidates = [X(:),Y(:),Z(:)];
+            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
+            candidates = candidates(internalNodes,:);
+
+            obj.initializeFromPointCloud(candidates);
+
+        end
+        function initializeFromBCCLattice(obj,numInternalVertices)
+        % initializes a volume mesh w/ BCC lattice point distribution
+        %------------------------------------------------------------------
+        % Inputs:
+        %   numInternalVertices -- approximate number of internal vertices
+        %------------------------------------------------------------------
+
+            % approximate lattice spacing
+            ds = (2*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+
+            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
+            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
+
+            % Number of elements per dimension
+            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
+            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
+            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
+
+            % Correct so that ds is constant
+            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
+
+            % 1D x-y-z coordinates
+            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
+            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
+            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
+
+            % get the grid
+            [X,Y,Z] = meshgrid(x,y,z);
+
+            % create a buffer 
+            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
+                                                                  obj.surfaceMesh.numVertices);
+            % clip to internal
+            candidates = [X(:),Y(:),Z(:)];
+            candidates = [candidates; candidates + [1,1,1]*0.5*ds];
+            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
+            candidates = candidates(internalNodes,:);
+
+            obj.initializeFromPointCloud(candidates);
+        end
+        function initializeFromFCCLattice(obj,numInternalVertices)
+        % initializes a volume mesh w/ BCC lattice point distribution
+        %------------------------------------------------------------------
+        % Inputs:
+        %   numInternalVertices -- approximate number of internal vertices
+        %------------------------------------------------------------------
+
+            % approximate lattice spacing
+            ds = (4*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+
+            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
+            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
+
+            % Number of elements per dimension
+            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
+            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
+            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
+
+            % Correct so that ds is constant
+            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
+
+            % 1D x-y-z coordinates
+            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
+            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
+            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
+
+            % get the grid
+            [X,Y,Z] = meshgrid(x,y,z);
+
+            % create a buffer 
+            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
+                                                                  obj.surfaceMesh.numVertices);
+            % clip to internal
+            candidates = [X(:),Y(:),Z(:)];
+            candidates = [candidates; 
+                          candidates + [0.5, 0,   0]  *ds;
+                          candidates + [0,   0.5, 0]  *ds;
+                          candidates + [0,   0,   0.5]*ds];
+
+            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
+            candidates = candidates(internalNodes,:);
+
+            obj.initializeFromPointCloud(candidates);
+        end
+        function initializeFromSurfaceIteration(obj,ratio)
+        % initialize volume mesh by iteratively offseting the surface 
+        %------------------------------------------------------------------
+        % Inputs:
+        %   ratio --- ratio numVertices 
+        %------------------------------------------------------------------
+
+            % default ratio 
+            if nargin == 1 || ratio > 0.95
+                ratio = 1/2;
+            end
+
+            % copy our surface mesh
+            tempMesh = SurfaceMesh(obj.surfaceMesh);
+            tempMesh.coarsenOptions.reproject=false;
+            tempMesh.coarsenOptions.method = 'uniform';
+            tempMesh.smoothOptions.reproject=false;
+
+            % add the origin
+            newCoordinates = [0,0,0];
+
+            
+            % offset the surface mesh inward coarsening along the way
+            while tempMesh.volume > 0.1*obj.surfaceMesh.volume
+
+                % reduce vertex count 
+                newVertexCount = round(tempMesh.numVertices*ratio);
+                tempMesh.setNumVertices(newVertexCount);
+
+                % offset mesh
+                tempMesh = tempMesh.offsetSurfaceMesh(-tempMesh.resolution);
+
+                % we don't want to reproject things
+                tempMesh.coarsenOptions.reproject=false;
+                tempMesh.coarsenOptions.method = 'uniform';
+                tempMesh.smoothOptions.reproject=false;
+
+                % smooth it out 
+                tempMesh.smooth(10,'cotan',false);
+
+                % prevent slivers meshes
+                if tempMesh.volume< 0.05*obj.surfaceMesh.volume ||...
+                   obj.surfaceMesh.numFaces<100
+                    break
+                end
+
+                % add our points
+                newCoordinates = [newCoordinates;tempMesh.coordinates];
+            end
+            obj.initializeFromPointCloud(newCoordinates);
+        end
+
+        function createGrid(obj,...
                                       minCoordinates,...
                                       maxCoordinates,...
                                       numDivisions)
@@ -92,13 +279,13 @@ classdef VolumeMesh
         %   numDivisions ---- number of cells in x,y,z
         %------------------------------------------------------------------
         
-            if length(minCoordinates)==3
+            if length(minCoordinates)~=3
                 error('minCoordinates must be 1x3')
             end
-            if length(maxCoordinates)==3
+            if length(maxCoordinates)~=3
                 error('maxCoordinates must be 1x3')
             end
-            if length(numDivisions)==3
+            if length(numDivisions)~=3
                 error('numDivisions must be 1x3')
             end
             
@@ -112,7 +299,7 @@ classdef VolumeMesh
             obj.numVertices = size(obj.coordinates,1);
                               
         end
-        function obj = delaunayTriangulation(obj)
+        function delaunayTriangulation(obj)
         % creates DT from the stored vertices
         %------------------------------------------------------------------
             DT = delaunayTriangulation(obj.coordinates);
@@ -122,7 +309,7 @@ classdef VolumeMesh
             obj.numNodes = obj.numVertices;
                               
         end
-        function obj = clipExternalCells(obj)
+        function clipExternalCells(obj)
         % if cell centroid is external to surface def cull it
         %------------------------------------------------------------------
             if ~ obj.hasSurfaceMesh
@@ -130,7 +317,7 @@ classdef VolumeMesh
             end
             
             centroids = obj.cellCentroids();
-            isInside = obj.surfaceMesh.isInsideRigorous(centroids);
+            isInside = obj.surfaceMesh.isInside(centroids);
             obj.cells = obj.cells(isInside>0.5,:);
             
             obj.numCells = size(obj.cells,1);
@@ -138,7 +325,7 @@ classdef VolumeMesh
             obj.numNodes = obj.numVertices;
 
         end
-        function obj = clipInternalCells(obj)
+        function clipInternalCells(obj)
         % if cell centroid is internal to surface def cull it
         %------------------------------------------------------------------
                
@@ -147,7 +334,7 @@ classdef VolumeMesh
             end
             
             centroids = obj.cellCentroids;
-            isInside = obj.surfaceMesh.isInsideRigorous(centroids);
+            isInside = obj.surfaceMesh.isInside(centroids);
             obj.cells = obj.cells(isInside<0.5,:);
             
             obj.numCells = size(obj.cells,1);
@@ -156,8 +343,38 @@ classdef VolumeMesh
             
         end
         
-        function obj = smooth(obj)
-        
+        function setDegree(obj,degree)
+        end
+        function smooth(obj)
+        % simple smoothing with uniform weights
+        %------------------------------------------------------------------
+
+            delta = zeros(obj.numVertices,3);
+            wsum = zeros(obj.numVertices,1);
+            for i = 1:obj.numCells
+                vertices = obj.cells(i,:);
+                coords = obj.coordinates(vertices,:);
+                v1 = coords(2,:)-coords(1,:);
+                v2 = coords(3,:)-coords(1,:);
+                v3 = coords(4,:)-coords(1,:);
+                v4 = coords(3,:)-coords(2,:);
+                v5 = coords(4,:)-coords(2,:);
+                v6 = coords(4,:)-coords(3,:);
+
+                delta(vertices(1),:) = delta(vertices(1),:) +v1+v2+v3;
+                delta(vertices(2),:) = delta(vertices(2),:) -v1+v4+v5;
+                delta(vertices(3),:) = delta(vertices(3),:) -v2-v4+v6;
+                delta(vertices(4),:) = delta(vertices(4),:) -v3-v5-v6;
+                
+                wsum(vertices(1)) = wsum(vertices(1))+3;
+                wsum(vertices(2)) = wsum(vertices(2))+3;
+                wsum(vertices(3)) = wsum(vertices(3))+3;
+                wsum(vertices(4)) = wsum(vertices(4))+3;
+
+
+            end
+            delta(obj.isBoundaryNode==1,:) = 0;
+            obj.coordinates = obj.coordinates + delta./wsum;
         end
         function edges = edges(obj)
         % unique edges within mesh
@@ -204,7 +421,7 @@ classdef VolumeMesh
             edges = edges(1:numUniqueEdges,1:2);
             
         end
-        function [edges,neighborVertices,edgeCells] = edgesAndRelations(obj)
+        function [edges, neighborVertices, edgeCells, cellEdges] = edgesAndRelations(obj)
         % unique edges within mesh and cell associativity
         %------------------------------------------------------------------
         % we make a map using a cell array. the min vertex index in a
@@ -220,6 +437,7 @@ classdef VolumeMesh
             % initialize our maps
             neighborVertices{obj.numVertices} = [];
             edgeCells{obj.numVertices} = [];
+            cellEdges = zeros(obj.numCells,6);
             uniqueEdgeIndices{obj.numVertices} = [];
             edges = zeros(6*obj.numVertices,2);
             numUniqueEdges=0;
@@ -228,12 +446,25 @@ classdef VolumeMesh
             nodei = [1,2,3,4,4,1];
             nodej = [2,3,4,1,2,3];
             
+            % map  local vertex (index1,index2) -> (local edge index)
+            vertexEdgeMap = [0, 1, 2, 4;...
+                             1, 0, 3, 5;...
+                             2, 3, 0, 6;...
+                             4, 5, 6, 0];
+
             % for each cell loop the local edges
             for i = 1:obj.numCells
                 for j = 1:6
                     
-                    vertex1 = obj.cells(i,nodei(j));
-                    vertex2 = obj.cells(i,nodej(j));
+                    % local indices of edge nodes
+                    p1 = nodei(j);
+                    p2 = nodej(j);
+
+                    localEdgeIndex = vertexEdgeMap(p1,p2);
+
+                    % order our vertices by their index
+                    vertex1 = obj.cells(i,p1);
+                    vertex2 = obj.cells(i,p2);
                     vmin = min(vertex1,vertex2);
                     vmax = max(vertex1,vertex2);
                     
@@ -242,14 +473,23 @@ classdef VolumeMesh
                         
                         numUniqueEdges=numUniqueEdges+1;
                         
+                        % neighbor vertices to the min index vertex of edge
                         neighborVertices{vmin}=[neighborVertices{vmin},vmax];
+
+                        % unique edges attached to vertex vmin
                         uniqueEdgeIndices{vmin} = [uniqueEdgeIndices{vmin},numUniqueEdges];
+
+                        % nodes of edges
                         edges(numUniqueEdges,1:2) = [vmin,vmax];
                     end
+
+                    % unique edge
                     uniqueEdgeij = uniqueEdgeIndices{vmin}(neighborVertices{vmin}==vmax);
-                    cellEdges(i,j) = uniqueEdgeij;
-                    % create our map edge -> cells
+
+                    % map cell - > edges w/ appropriate ordering
+                    cellEdges(i,localEdgeIndex) = uniqueEdgeij;
                     
+                    % map edges - > cells
                     if uniqueEdgeij > length(edgeCells)
                         edgeCells{uniqueEdgeij}=[i];
                     else
@@ -321,7 +561,7 @@ classdef VolumeMesh
             resolution =(sum(V)/size(V,1))^(1/3);
         end
         
-        function obj = addCellField(obj,fieldData,fieldName)
+        function addCellField(obj,fieldData,fieldName)
         % adds a face field that can be export to vtk
         %------------------------------------------------------------------
         % Inputs:
@@ -344,7 +584,7 @@ classdef VolumeMesh
             obj.cellFields{obj.numCellFields}.data = fieldData;
             obj.cellFields{obj.numCellFields}.name = fieldName;
         end
-        function obj = addNodeField(obj,fieldData,fieldName)
+        function addNodeField(obj,fieldData,fieldName)
         % adds a node field that can be export to vtk
         %------------------------------------------------------------------
         % Inputs:
@@ -367,7 +607,7 @@ classdef VolumeMesh
             obj.nodeFields{obj.numNodeFields}.data = fieldData;
             obj.nodeFields{obj.numNodeFields}.name = fieldName;
         end
-        function obj = clearFields(obj)
+        function clearFields(obj)
         % clears out the field data 
         %------------------------------------------------------------------
         
@@ -378,7 +618,7 @@ classdef VolumeMesh
             obj.cellFields = [];
         end
         
-        function [] = writeVTK(obj,fileName,precision)
+        function writeVTK(obj,fileName,precision)
         % writes mesh to vtk file for visualization w/ paraview etc
         %------------------------------------------------------------------
         % Inputs:

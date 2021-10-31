@@ -40,8 +40,7 @@ classdef SphericalHarmonicModel
     
     properties (GetAccess=public)
         frame; % integrator needs to know if bff or inertial x,y,z
-        
-        % switch C/S to vector format
+       
         L; % degree of model
         C; % cosine coefficients
         S; % sine coefficients
@@ -712,12 +711,12 @@ classdef SphericalHarmonicModel
             acceleration(:,2) = A.*(acceleration(:,2)-dUdr.*drdx(:,2));
             acceleration(:,3) = A.*(acceleration(:,3)-dUdr.*drdx(:,3)+dUdeps);   
         end       
-%         function [laplacian] = Laplacian(obj,p)
-%             laplacian=zeros(size(p,1));
-%             r = sqrt(p(:,1).^2+p(:,2).^2+p(:,3).^2);
-%             laplacian(r<obj.Ro) = -4*pi*obj.Mu;
-%             
-%         end
+        function [laplacian] = Laplacian(obj,p)
+            laplacian=zeros(size(p,1));
+            r = sqrt(p(:,1).^2+p(:,2).^2+p(:,3).^2);
+            laplacian(r<obj.Ro) = -4*pi*obj.Mu;
+            
+        end
         
         %function [VVU] = gravityGradient(obj,P) 
     

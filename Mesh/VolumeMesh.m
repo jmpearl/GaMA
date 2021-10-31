@@ -90,6 +90,8 @@ classdef VolumeMesh < handle
             obj.isBoundaryNode = zeros(obj.numNodes,1);
             obj.isBoundaryNode(1:obj.surfaceMesh.numVertices) = 1;
 
+            obj.initializeBulkProperties;
+
         end
         function initializeFromSimpleLattice(obj,numInternalVertices)
         % initializes a volume mesh w/ cubic lattice point distribution
@@ -222,6 +224,8 @@ classdef VolumeMesh < handle
         %   ratio --- ratio numVertices 
         %------------------------------------------------------------------
 
+            %assert (obj.hasSurfaceMesh==1) "no surface mesh loaded"
+
             % default ratio 
             if nargin == 1 || ratio > 0.95
                 ratio = 1/2;
@@ -265,6 +269,137 @@ classdef VolumeMesh < handle
                 newCoordinates = [newCoordinates;tempMesh.coordinates];
             end
             obj.initializeFromPointCloud(newCoordinates);
+        end
+        function initializeFromOctree(obj,numInitialInternalVertices,...
+                                          numLayers,...
+                                          smoothingFactor)
+        % octree distributed internal points
+        %------------------------------------------------------------------
+        % Inputs:
+        %   numLayers ----------------- number of refinement steps
+        %   numInitialIntenalVertices - initial grid size
+        %   smoothingFactor ----------- in [1,2] controls slip proximity
+        %------------------------------------------------------------------
+            
+            % defaults
+            if nargin <= 2
+                numLayers = 2;
+            end
+            if nargin <= 3
+                smoothingFactor = 1;
+            end
+
+            % approximate lattice spacing
+            ds = (obj.surfaceMesh.volume/numInitialInternalVertices)^(1/3);
+
+            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
+            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
+
+            % Number of elements per dimension
+            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
+            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
+            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
+
+            % Correct so that ds is constant
+            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
+
+            % 1D x-y-z coordinates
+            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
+            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
+            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
+
+            % get the grid
+            [X,Y,Z] = meshgrid(x,y,z);
+
+            % 1d-ify
+            X=X(:);
+            Y=Y(:);
+            Z=Z(:);
+
+            % Begin: Octree Refinement and Mascon Distribution Generation
+            %-------------------------------------------------------------------------%
+
+            %Initialize
+            %Octree_Level =[];
+            cm=[];
+
+            for j = 1:numLayers
+                % Only keep mascons located within the body
+                % location of vertices relative to centroid dependent upon otree level
+                Offset = 1/2^j*ds*smoothingFactor;
+
+                if j<=numLayers
+
+                    InOrOutVar = zeros(length(X),8);
+
+                    % returns 0 for outside 1 for inside
+                    [ InOrOutVar(:,1) ] = obj.surfaceMesh.isInside( [X+Offset,Y+Offset,Z+Offset] );
+                    [ InOrOutVar(:,2) ] = obj.surfaceMesh.isInside( [X-Offset,Y+Offset,Z+Offset] );
+                    [ InOrOutVar(:,3) ] = obj.surfaceMesh.isInside( [X+Offset,Y-Offset,Z+Offset] );
+                    [ InOrOutVar(:,4) ] = obj.surfaceMesh.isInside( [X-Offset,Y-Offset,Z+Offset] );
+                    [ InOrOutVar(:,5) ] = obj.surfaceMesh.isInside( [X+Offset,Y+Offset,Z-Offset] );
+                    [ InOrOutVar(:,6) ] = obj.surfaceMesh.isInside( [X-Offset,Y+Offset,Z-Offset] );
+                    [ InOrOutVar(:,7) ] = obj.surfaceMesh.isInside( [X+Offset,Y-Offset,Z-Offset] );
+                    [ InOrOutVar(:,8) ] = obj.surfaceMesh.isInside( [X-Offset,Y-Offset,Z-Offset] );
+                    
+                    % 8 -- fully internal
+                    % 0 -- fully external
+                    % inbetween is a bc cell
+                    IOVar = sum(InOrOutVar,2);
+                    
+                    % Add cubes to the octree distribution if they lie 
+                    % completely inside the body of interest
+                    cm = [cm;X(IOVar>7.5),Y(IOVar>7.5),Z(IOVar>7.5)];
+
+                    if j < numLayers
+                        %Cubes that the domain boundary passes through
+                        X = X(IOVar>.5 & IOVar<7.5);
+                        Y = Y(IOVar>.5 & IOVar<7.5);
+                        Z = Z(IOVar>.5 & IOVar<7.5);
+    
+                        %Subdivide boundary cube into 8 smaller cubes
+                        C=1/2^(j+1);
+                        cm_next = [X+C*ds,Y+C*ds,Z+C*ds;...
+                                   X-C*ds,Y+C*ds,Z+C*ds;...
+                                   X+C*ds,Y-C*ds,Z+C*ds;...
+                                   X-C*ds,Y-C*ds,Z+C*ds;...
+                                   X+C*ds,Y+C*ds,Z-C*ds;...
+                                   X-C*ds,Y+C*ds,Z-C*ds;...
+                                   X+C*ds,Y-C*ds,Z-C*ds;...
+                                   X-C*ds,Y-C*ds,Z-C*ds];
+    
+                        %Redefine x,y,z for next iteration of loop
+                        X = cm_next(:,1);
+                        Y = cm_next(:,2);
+                        Z = cm_next(:,3);
+                    end
+
+                else
+                    % For the last refinement step determine if centroid 
+                    % of cube is internal or external
+                    %InOrOutVar = obj.surfaceMesh.isInside( [X,Y,Z] );
+
+                    %IOVar = sum(InOrOutVar,2);
+
+                    %cm = [cm;X(IOVar>0.5),Y(IOVar>0.5),Z(IOVar>0.5)];
+                end
+
+            end
+            obj.initializeFromPointCloud(cm);
+            obj.initializeBulkProperties();
+        end
+        function initializeBulkProperties(obj)
+        % recalculate stored bulk properties
+        %------------------------------------------------------------------
+
+            obj.volume = obj.calculateVolume;
+            obj.centroid = obj.calculateCentroid;
+            obj.resolution = obj.calculateResolution;
+
+            if obj.hasSurfaceMesh
+                obj.surfaceArea = obj.surfaceMesh.surfaceArea;
+            end
+
         end
 
         function createGrid(obj,...

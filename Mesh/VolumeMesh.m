@@ -7,6 +7,9 @@ classdef VolumeMesh < handle
 % Simple array based tetrahedral mesh class. This as designed as a mascon
 % distribution generator -- using numerical quadrature to get the locations
 % and masses. 
+% 
+% it is assumed that the surface mesh vertices are the first set of nodes 
+% followed by internal vertices and then any higher degree nodes.
 %--------------------------------------------------------------------------
 % Abreviations:
 %       e ----- unique edge
@@ -40,34 +43,93 @@ classdef VolumeMesh < handle
         numBoundaryNodes    % number of nodes on surface
         numNodes            % number of nodes for degree>1 meshes
         numVertices         % number of vertices
-        numEdges            % number of edges
-        numFaces            % number of faces
         numCells            % number of half edges
         numNodeFields       % number of node fields
         numCellFields       % number of face fields
         
     end
     methods
-        function obj = VolumeMesh(surfaceMesh)
-            obj.hasSurfaceMesh=false;
+        function obj = VolumeMesh(mesh)
+        % constructor to set things up from surface or vol mesh
+        %------------------------------------------------------------------
             if nargin == 1
-                if isa(surfaceMesh,'SurfaceMesh')
-                    obj.surfaceMesh=surfaceMesh;
+                if isa(mesh,'SurfaceMesh')
+                    obj.surfaceMesh=mesh;
                     obj.hasSurfaceMesh=true;
+
+                    obj.numNodeFields = 0;
+                    obj.numCellFields = 0;
+                    obj.numCells = 0;
+                    obj.numVertices = 0;
+                    obj.numNodes = 0;
+                    obj.numBoundaryVertices = 0;
+                    obj.numBoundaryNodes = 0;
+
+                    obj.isCurved=false;
+                    obj.degree = 1;
+
+                elseif isa(mesh,'VolumeMesh')
+                    obj.copy(mesh);
                 end
+            elseif nargin ~= 0
+                error("incorrection number of inputs")
             end
-
-            obj.numNodeFields = 0;
-            obj.numCellFields = 0;
-            obj.numCells = 0;
-            obj.numVertices = 0;
-            obj.numNodes = 0;
-            obj.numBoundaryVertices = 0;
-            obj.numBoundaryNodes = 0;
-
-            obj.isCurved=false;
-            obj.degree = 1;
         end
+        function copy(obj,mesh)
+        % deep copy from another volume mesh
+        %------------------------------------------------------------------
+            
+            obj.coordinates = mesh.coordinates;
+            obj.cells = mesh.cells;
+            obj.surfaceMesh = mesh.surfaceMesh;
+            obj.isBoundaryNode = mesh.isBoundaryNode;
+            
+            obj.cellFields = mesh.cellFields;
+            obj.nodeFields = mesh.nodeFields;
+
+            obj.hasSurfaceMesh = mesh.hasSurfaceMesh;
+            obj.isCurved = mesh.isCurved;
+            obj.degree = mesh.degree;
+            obj.volume = mesh.volume;
+            obj.surfaceArea = mesh.surfaceArea;
+            obj.centroid = mesh.centroid;
+            obj.resolution = mesh.resolution;
+
+            obj.numBoundaryVertices = mesh.numBoundaryVertices;
+            obj.numBoundaryNodes = mesh.numBoundaryNodes;
+            obj.numNodes = mesh.numNodes;
+            obj.numVertices = mesh.numVertices;
+            obj.numCells = mesh.numCells;
+            obj.numNodeFields = mesh.numNodeFields;
+            obj.numCellFields = mesh.numCellFields;
+
+        end
+        function clear(obj)
+        % resets the volume mesh
+        %------------------------------------------------------------------
+            clear obj.coordinates obj.cells obj.surfaceMesh
+            clear obj.isBoundaryNode
+
+            obj.clearFields()
+
+            obj.hasSurfaceMesh=false;
+            obj.isCurved=false;
+            obj.degree=1
+            obj.volume=0;
+            obj.surfaceArea=0;
+            obj.centroid=0;
+            obj.resolution=0;
+
+            obj.numBoundaryVertices=0;
+            obj.numBoundaryNodes=0;
+            obj.numNodes=0;
+            obj.numVertices=0;
+            obj.numCells=0;
+            obj.numNodeFields=0;
+            obj.numCellFields=0;
+
+        end
+
         function initializeFromPointCloud(obj,internalCoordinates)
         % constructions mesh from set of internal vertices
         %------------------------------------------------------------------
@@ -482,45 +544,48 @@ classdef VolumeMesh < handle
         % w/ v being vertex and e edges
         %------------------------------------------------------------------
             if degree ~= obj.degree
-                if degree == 1
-                    obj.flatten();
-                elseif degree == 2
-                    [edges, ~, ~, cellEdges] = obj.edgesAndRelations();
-                    size(obj.coordinates);
+                switch degree
+                    case 1
+                        obj.flatten();
+                    case 2
+                        [edges, ~, ~, cellEdges] = obj.edgesAndRelations();
+                        size(obj.coordinates);
 
-                    % add midpoints to our coords
-                    obj.coordinates = [obj.coordinates;...
-                                  0.5*(obj.coordinates(edges(:,1),:) +...
-                                       obj.coordinates(edges(:,2),:))];
-                    size(obj.coordinates);
-                    % update our boundary nodes
-                    isBoundaryEdge = 0.5*(obj.isBoundaryNode(edges(:,1),:) +...
-                                          obj.isBoundaryNode(edges(:,2),:));
-                    isBoundaryEdge(isBoundaryEdge<075) = 0;
-                    obj.isBoundaryNode=[obj.isBoundaryNode;...
-                                        isBoundaryEdge];
+                        % add midpoints to our coords
+                        obj.coordinates = [obj.coordinates;...
+                            0.5*(obj.coordinates(edges(:,1),:) +...
+                            obj.coordinates(edges(:,2),:))];
+                        size(obj.coordinates);
 
-                    % increase index so cells point to right location
-                    cellEdges = cellEdges + obj.numVertices;
+                        % midpoints on boundary
+                        isBoundaryEdge = 0.5*(obj.isBoundaryNode(edges(:,1),:) +...
+                            obj.isBoundaryNode(edges(:,2),:));
+                        isBoundaryEdge(isBoundaryEdge<0.75) = 0;
+                        obj.isBoundaryNode=[obj.isBoundaryNode;...
+                            isBoundaryEdge];
 
-                    % set up our 10 nodes in correct local orientation
-                    obj.cells = [obj.cells(:,1),...
-                                 cellEdges(:,1),...
-                                 obj.cells(:,2),...
-                                 cellEdges(:,2),...
-                                 cellEdges(:,3),...
-                                 obj.cells(:,3),...
-                                 cellEdges(:,4),...
-                                 cellEdges(:,5),...
-                                 cellEdges(:,6),...
-                                 obj.cells(:,4)];
+                        % increase index so cells point to right location
+                        cellEdges = cellEdges + obj.numVertices;
 
-                    obj.numBoundaryNodes = sum(obj.isBoundaryNode);
-                    obj.numNodes = size(obj.coordinates,1);
-                    obj.isCurved=true;
-                    obj.degree = 2;
-                    obj.initializeBulkProperties();
-                    
+                        % set up our 10 nodes in correct local orientation
+                        obj.cells = [obj.cells(:,1),...
+                            cellEdges(:,1),...
+                            obj.cells(:,2),...
+                            cellEdges(:,2),...
+                            cellEdges(:,3),...
+                            obj.cells(:,3),...
+                            cellEdges(:,4),...
+                            cellEdges(:,5),...
+                            cellEdges(:,6),...
+                            obj.cells(:,4)];
+
+                        obj.numBoundaryNodes = sum(obj.isBoundaryNode);
+                        obj.numNodes = size(obj.coordinates,1);
+                        obj.isCurved=true;
+                        obj.degree = 2;
+                        obj.initializeBulkProperties();
+                    otherwise
+                        error('specified degree not supported')
                 end
             end
         end
@@ -702,37 +767,193 @@ classdef VolumeMesh < handle
             
         end
         
-        function centroids = cellCentroids(obj)
+        function [vertices] = cellVertices(obj)
+        % gets the vertices for the given cell
+        %------------------------------------------------------------------
+        % with degree > 1 cells, the vertices are interwoven with the other 
+        % geometric nodes. This function with separate them out.
+        %------------------------------------------------------------------
+
+            switch obj.degree
+                case 1
+                    vertices = obj.cells;
+                case 2
+                    vertices = [obj.cells(:,1),...
+                                obj.cells(:,3),...
+                                obj.cells(:,6),...
+                                obj.cells(:,10)];
+            end
+
+        end
+
+        function [centroids,volumes] = cellCentroids(obj)
         % centroids of cells
         %------------------------------------------------------------------
         % Outputs:
         %   centroids - coordinates of centroids
         %------------------------------------------------------------------
+            if ~obj.isCurved
+                p1 = obj.coordinates(obj.cells(:,1),:);
+                p2 = obj.coordinates(obj.cells(:,2),:); 
+                p3 = obj.coordinates(obj.cells(:,3),:); 
+                p4 = obj.coordinates(obj.cells(:,4),:); 
+                centroids=1/4*(p1+p2+p3+p4); 
+            else
+                % high degree quadrature rule (Nix1)
+                quadratureOrder = 6;
+                [u,v,w,weights] =  NewtonCotesTetrahedron(quadratureOrder);
 
-            p1 = obj.coordinates(obj.cells(:,1),:);
-            p2 = obj.coordinates(obj.cells(:,2),:); 
-            p3 = obj.coordinates(obj.cells(:,3),:); 
-            p4 = obj.coordinates(obj.cells(:,4),:); 
-            centroids=1/4*(p1+p2+p3+p4); 
+                % Ng basis functions assessed at the Ni quad points (NixNg)
+                [phi,dphidu,dphidv,dphidw] =  LagrangeInterpolantsTetrahedron( u, v, w, obj.degree);
+
+                % x,y,z coords of interpolation points for cells (Nc x Ng)
+                numNodesPerCell = size(obj.cells,2);
+                Xx = zeros(obj.numCells,numNodesPerCell);
+                Xy = zeros(obj.numCells,numNodesPerCell);
+                Xz = zeros(obj.numCells,numNodesPerCell);
+                
+                for i = 1:numNodesPerCell
+                    Xx(:,i) = obj.coordinates(obj.cells(:,i),1);
+                    Xy(:,i) = obj.coordinates(obj.cells(:,i),2);
+                    Xz(:,i) = obj.coordinates(obj.cells(:,i),3);
+                end
+
+                % coordinates of all quadrature points ( NixNc )
+                x = phi*Xx';
+                y = phi*Xy';
+                z = phi*Xz';
+
+                % components of jacobian at all quad points (NixNc)
+                dXdx11 = dphidu*Xx';
+                dXdx12 = dphidv*Xx';
+                dXdx13 = dphidw*Xx';
+                dXdx21 = dphidu*Xy';
+                dXdx22 = dphidv*Xy';
+                dXdx23 = dphidw*Xy';
+                dXdx31 = dphidu*Xz';
+                dXdx32 = dphidv*Xz';
+                dXdx33 = dphidw*Xz';
+
+                % det of jacobian at all quad points ( NixNc )
+                J = dXdx11.*(dXdx22.*dXdx33 - dXdx23.*dXdx32) - ...
+                    dXdx12.*(dXdx21.*dXdx33 - dXdx23.*dXdx31) + ...
+                    dXdx13.*(dXdx21.*dXdx32 - dXdx22.*dXdx31);
+
+                J = abs(J);
+
+                % position times det(J) (NixNc) -- for centroid calc
+                xJ = x.*J;
+                yJ = y.*J;
+                zJ = z.*J;
+
+                volumes =  J'*weights;
+                centroids =  [xJ'*weights,yJ'*weights,zJ'*weights];
+
+                centroids = centroids./volumes;
+                volumes = volumes/6.0;
+            end
 
             
         end
-        function volumes = cellVolumes(obj)
-        % centroids of cells
+        function [centroids,volumes] = vertexCentroids(obj)
+        % centroids & volumes of nodes
+        %------------------------------------------------------------------
+        % after vectorizing the general part got a little hard to read.
+        % Dimensions of matrices are listed with the following definitions:
+        % Ng -- number of local geometric quadrature points defining cell
+        % Ni -- number of high res quadrature points used to integrate over
+        %       the cell
+        % Nc -- number of cells
         %------------------------------------------------------------------
         % Outputs:
-        %   centroids - coordinates of centroids
+        %   centroids - coordinates of node centroids
+        %   volumes --- volumes of nodes
         %------------------------------------------------------------------
-
-            p1 = obj.coordinates(obj.cells(:,1),:);
-            p2 = obj.coordinates(obj.cells(:,2),:)-p1; 
-            p3 = obj.coordinates(obj.cells(:,3),:)-p1; 
-            p4 = obj.coordinates(obj.cells(:,4),:)-p1; 
-            volumes = 1/6*abs(dot(p4,cross(p2,p3,2),2));
-           
             
+            centroids = zeros(obj.numVertices,3);
+            volumes = zeros(obj.numVertices,1);
+
+            if ~ obj.isCurved
+
+                cellCentroids = obj.cellCentroids();
+                cellVolumes = obj.cellVolumes();
+
+                for i = 1:obj.numCells
+                    ids = obj.cells(i,:);
+                    ci = cellVolumes(i).*cellCentroids(i,:);
+
+                    volumes(ids) = volumes(ids)+cellVolumes(i);
+                    centroids(ids,:) = centroids(ids,:) + [ci;ci;ci;ci];
+                end
+                centroids = centroids./volumes;
+                volumes = volumes/4;
+
+            else
+                
+                % high degree quadrature rule (Nix1)
+                quadratureOrder = 6;
+                [u,v,w,weights] =  NewtonCotesTetrahedron(quadratureOrder);
+
+                % Ng basis functions assessed at the Ni quad points (NixNg)
+                [phi,dphidu,dphidv,dphidw] =  LagrangeInterpolantsTetrahedron( u, v, w, obj.degree);
+
+                % vertex basis functions (NixNg)
+                [phiq,~,~,~] =  LagrangeInterpolantsTetrahedron( u, v, w, 1);
+                rectilinearCells = obj.cellVertices();
+
+                % x,y,z coords of interpolation points for cells (Nc x Ng)
+                numNodesPerCell = size(obj.cells,2);
+                Xx = zeros(obj.numCells,numNodesPerCell);
+                Xy = zeros(obj.numCells,numNodesPerCell);
+                Xz = zeros(obj.numCells,numNodesPerCell);
+                
+                for i = 1:numNodesPerCell
+                    Xx(:,i) = obj.coordinates(obj.cells(:,i),1);
+                    Xy(:,i) = obj.coordinates(obj.cells(:,i),2);
+                    Xz(:,i) = obj.coordinates(obj.cells(:,i),3);
+                end
+
+                % coordinates of all quadrature points ( NixNc )
+                x = phi*Xx';
+                y = phi*Xy';
+                z = phi*Xz';
+
+                % components of jacobian at all quad points (NixNc)
+                dXdx11 = dphidu*Xx';
+                dXdx12 = dphidv*Xx';
+                dXdx13 = dphidw*Xx';
+                dXdx21 = dphidu*Xy';
+                dXdx22 = dphidv*Xy';
+                dXdx23 = dphidw*Xy';
+                dXdx31 = dphidu*Xz';
+                dXdx32 = dphidv*Xz';
+                dXdx33 = dphidw*Xz';
+
+                % det of jacobian at all quad points ( NixNc )
+                J = dXdx11.*(dXdx22.*dXdx33 - dXdx23.*dXdx32) - ...
+                    dXdx12.*(dXdx21.*dXdx33 - dXdx23.*dXdx31) + ...
+                    dXdx13.*(dXdx21.*dXdx32 - dXdx22.*dXdx31);
+
+                J = abs(J);
+
+                % position times det(J) (NixNc) -- for centroid calc
+                xJ = x.*J;
+                yJ = y.*J;
+                zJ = z.*J;
+
+                % (Nix1)' - ( (NixNg) .* Nix1)
+                for i = 1:obj.numCells
+                    vertexIndices = rectilinearCells(i,:); 
+                    volumes(vertexIndices) = volumes(vertexIndices,1) + (phiq.*J(:,i))'*weights;
+                    centroids(vertexIndices,1) = centroids(vertexIndices,1) + (phiq.*xJ(:,i))'*weights;
+                    centroids(vertexIndices,2) = centroids(vertexIndices,2) + (phiq.*yJ(:,i))'*weights;
+                    centroids(vertexIndices,3) = centroids(vertexIndices,3) + (phiq.*zJ(:,i))'*weights;
+
+                end
+                centroids = centroids./volumes;
+                volumes = volumes/6.0;
+            end
         end
-        
         function [centroids,volumes] = nodeCentroids(obj)
         % centroids & volumes of nodes
         %------------------------------------------------------------------
@@ -825,6 +1046,127 @@ classdef VolumeMesh < handle
 
                 end
                 centroids = centroids./volumes;
+                volumes = volumes/6.0;
+            end
+        end
+        function volumes = cellVolumes(obj)
+        % centroids of cells
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids - coordinates of centroids
+        %------------------------------------------------------------------
+            
+            if ~obj.isCurved
+
+                p1 = obj.coordinates(obj.cells(:,1),:);
+                p2 = obj.coordinates(obj.cells(:,2),:)-p1; 
+                p3 = obj.coordinates(obj.cells(:,3),:)-p1; 
+                p4 = obj.coordinates(obj.cells(:,4),:)-p1; 
+                volumes = 1/6*abs(dot(p4,cross(p2,p3,2),2));
+
+            else
+                    
+                % high degree quadrature rule (Nix1)
+                quadratureOrder = obj.degree;
+                [u,v,w,weights] =  NewtonCotesTetrahedron(quadratureOrder);
+
+                % Ng basis functions assessed at the Ni quad points (NixNg)
+                [~,dphidu,dphidv,dphidw] =  LagrangeInterpolantsTetrahedron( u, v, w, obj.degree);
+
+                % x,y,z coords of interpolation points for cells (Nc x Ng)
+                numNodesPerCell = size(obj.cells,2);
+                Xx = zeros(obj.numCells,numNodesPerCell);
+                Xy = zeros(obj.numCells,numNodesPerCell);
+                Xz = zeros(obj.numCells,numNodesPerCell);
+                
+                for i = 1:numNodesPerCell
+                    Xx(:,i) = obj.coordinates(obj.cells(:,i),1);
+                    Xy(:,i) = obj.coordinates(obj.cells(:,i),2);
+                    Xz(:,i) = obj.coordinates(obj.cells(:,i),3);
+                end
+
+                % components of jacobian at all quad points (NixNc)
+                dXdx11 = dphidu*Xx';
+                dXdx12 = dphidv*Xx';
+                dXdx13 = dphidw*Xx';
+                dXdx21 = dphidu*Xy';
+                dXdx22 = dphidv*Xy';
+                dXdx23 = dphidw*Xy';
+                dXdx31 = dphidu*Xz';
+                dXdx32 = dphidv*Xz';
+                dXdx33 = dphidw*Xz';
+
+                % det of jacobian at all quad points ( NixNc )
+                J = dXdx11.*(dXdx22.*dXdx33 - dXdx23.*dXdx32) - ...
+                    dXdx12.*(dXdx21.*dXdx33 - dXdx23.*dXdx31) + ...
+                    dXdx13.*(dXdx21.*dXdx32 - dXdx22.*dXdx31);
+
+                J = abs(J);
+
+                volumes = J'*weights/6.0;
+            end
+            
+        end
+        function volumes = vertexVolumes(obj)
+        % calculate volume assoc. w/ each node
+        %------------------------------------------------------------------
+            
+            volumes = zeros(obj.numVertices,1);
+        
+            if ~obj.isCurved
+                cellVolumes = obj.cellVolumes();
+                for i = 1:obj.numCells
+                    ids = obj.cells(i,:);
+                    volumes(ids) = volumes(ids)+0.25*cellVolumes(i);
+                end
+            else
+                
+                % high degree quadrature rule (Nix1)
+                quadratureOrder = obj.degree+2;
+                [u,v,w,weights] =  NewtonCotesTetrahedron(quadratureOrder);
+
+                % Ng basis functions assessed at the Ni quad points (NixNg)
+                [~,dphidu,dphidv,dphidw] =  LagrangeInterpolantsTetrahedron( u, v, w, obj.degree);
+
+                % vertex basis functions
+                [phiq,~,~,~] =  LagrangeInterpolantsTetrahedron( u, v, w, 1);
+                rectilinearCells = obj.cellVertices();
+
+                % x,y,z coords of interpolation points for cells (Nc x Ng)
+                numNodesPerCell = size(obj.cells,2);
+                Xx = zeros(obj.numCells,numNodesPerCell);
+                Xy = zeros(obj.numCells,numNodesPerCell);
+                Xz = zeros(obj.numCells,numNodesPerCell);
+                
+                for i = 1:numNodesPerCell
+                    Xx(:,i) = obj.coordinates(obj.cells(:,i),1);
+                    Xy(:,i) = obj.coordinates(obj.cells(:,i),2);
+                    Xz(:,i) = obj.coordinates(obj.cells(:,i),3);
+                end
+
+                % components of jacobian at all quad points (NixNc)
+                dXdx11 = dphidu*Xx';
+                dXdx12 = dphidv*Xx';
+                dXdx13 = dphidw*Xx';
+                dXdx21 = dphidu*Xy';
+                dXdx22 = dphidv*Xy';
+                dXdx23 = dphidw*Xy';
+                dXdx31 = dphidu*Xz';
+                dXdx32 = dphidv*Xz';
+                dXdx33 = dphidw*Xz';
+
+                % det of jacobian at all quad points ( NixNc )
+                J = dXdx11.*(dXdx22.*dXdx33 - dXdx23.*dXdx32) - ...
+                    dXdx12.*(dXdx21.*dXdx33 - dXdx23.*dXdx31) + ...
+                    dXdx13.*(dXdx21.*dXdx32 - dXdx22.*dXdx31);
+
+                J = abs(J);
+
+                % (Nix1)' - ( (NixNg) .* Nix1)
+                for i = 1:obj.numCells
+                    vertexIndices = rectilinearCells(i,:); 
+                    volumes(vertexIndices) = volumes(vertexIndices,1) + (phiq.*J(:,i))'*weights;
+                end
                 volumes = volumes/6.0;
             end
         end
@@ -969,6 +1311,86 @@ classdef VolumeMesh < handle
             obj.cellFields = [];
         end
         
+        function cellValues = cellValuesFromVertices(obj,vertexValues)
+        % get cell value from vertices
+        %------------------------------------------------------------------
+            rectilinearCells = obj.cellVertices();
+
+            p1 = rectilinearCells(:,1);
+            p2 = rectilinearCells(:,2);
+            p3 = rectilinearCells(:,3);
+            p4 = rectilinearCells(:,4);
+           
+            cellValues = 1/4*(vertexValues(p1,:)+...
+                              vertexValues(p2,:)+...
+                              vertexValues(p3,:)+...
+                              vertexValues(p4,:)); 
+
+        end
+        function nodeValues = nodeValuesFromCellValues(obj,cellValues)
+        % gets node values from vol weight cell values
+        %------------------------------------------------------------------
+            nodeValues = zeros(obj.numNodes,size(cellValues,2));
+            nodeVolumes = zeros(obj.numNodes,1);
+
+            cellVolumes = obj.cellVolumes;
+            for i = 1:obj.numCells
+                ids = obj.cells(i,:);
+                nodeVolumes(ids,:) = nodeVolumes(ids,:) + cellVolumes(i);
+                nodeValues(ids,:) = nodeValues(ids,:) + cellVolumes(i) * cellValues(i,:);
+            end
+            nodeValues = nodeValues./nodeVolumes;
+        end
+        function vertexValues = vertexValuesFromCellValues(obj,cellValues)
+        % gets vertex values from vol weight cell values
+        %------------------------------------------------------------------
+            vertexValues = zeros(obj.numNodes,size(cellValues,2));
+            nodeVolumes = zeros(obj.numNodes,1);
+
+            rectilinearCells = obj.cellVertices();
+            cellVolumes = obj.cellVolumes;
+            for i = 1:obj.numCells
+                ids = rectilinearCells(i,:);
+                nodeVolumes(ids,:) = nodeVolumes(ids,:) + cellVolumes(i);
+                vertexValues(ids,:) = vertexValues(ids,:) + cellVolumes(i) * cellValues(i,:);
+            end
+            vertexValues = vertexValues./nodeVolumes;
+        end
+        
+        function coords = boundaryCoordinates(obj)
+        % get the unit normals of the boundary nodes
+        %------------------------------------------------------------------
+            coords = obj.coordinates(obj.isBoundaryNode==1,:);
+        end
+        function normals = boundaryNodeNormals(obj)
+        % get the unit normals of the boundary nodes
+        %------------------------------------------------------------------
+            normals = zeros(obj.numVertices,3);
+            normals(1:obj.surfaceMesh.numVertices,:) = obj.surfaceMesh.vertexNormals();
+
+            % were going map to the cell and back to the nodes to get
+            % normals for our other boundary nodes and smooth things out
+            normals = obj.cellValuesFromVertices(normals);
+            normals = obj.nodeValuesFromCellValues(normals);
+            normals = normals(obj.isBoundaryNode==1,:);
+            normals = normals./sqrt(normals(:,1).^2 + ...
+                                    normals(:,2).^2 + ...
+                                    normals(:,3).^2);
+        end
+        function curve(obj,surfaceMesh)
+        % curve 
+        %------------------------------------------------------------------
+            if isa(surfaceMesh,"SurfaceMesh")
+                boundaryNodeCoords = obj.boundaryCoordinates();
+                boundaryNormals = obj.boundaryNodeNormals();
+                newCoordinates = surfaceMesh.project(boundaryNodeCoords,boundaryNormals);
+                obj.coordinates(obj.isBoundaryNode==1,:) = newCoordinates;
+                
+            else
+                error('requires surface mesh input')
+            end
+        end
+        
         function writeVTK(obj,fileName,precision)
         % writes mesh to vtk file for visualization w/ paraview etc
         %------------------------------------------------------------------
@@ -1021,7 +1443,7 @@ classdef VolumeMesh < handle
                 if obj.degree == 1
                     outputi = [num2str([length(obj.cells(i,:)),obj.cells(i,:)-1]),'\n'];
                 elseif obj.degree == 2
-                    teti = obj.cells(i,[1,3,10,2,4,5,6,7,8,9])-1;
+                    teti = obj.cells(i,[1,3,6,10,2,5,4,7,8,9])-1;
                     outputi = [num2str([length(obj.cells(i,:)),teti]),'\n'];
                 end
                 fprintf(fileID,outputi);
@@ -1038,8 +1460,6 @@ classdef VolumeMesh < handle
             % Write Cell Data
             %--------------------------------------------------------------
             fprintf(fileID,['CELL_DATA ',num2str(obj.numCells),'\n']);
-           
-            
             for i = 1:size(obj.cellFields,2)
                 if size(obj.cellFields{i}.data,2)==1
                     vtkDataHeader = ['SCALARS ',obj.cellFields{i}.name,' float 1\nLOOKUP_TABLE default\n'];

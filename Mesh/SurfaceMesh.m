@@ -60,13 +60,23 @@ classdef SurfaceMesh < handle
         
         numNodes          % number of nodes for degree>1 meshes
         numVertices       % number of vertices
+        numFixedVertices  % number of vertices that can't be altered
         numEdges          % number of edges
         numHalfEdges      % number of half edges
+        numFixedHalfEdges % number of half edges that can't be altered
         numFaces          % number of faces
         numNodeFields     % number of node fields
         numFaceFields     % number of face fields
         
+        coarsenOptions    % options for edge collapse algorithm
+        refineOptions     % options for refinement algorithm
+        smoothOptions     % options for smoothing algorithm
+
+        isFixedVertex     % vertices that won't be modified
+        isFixedHalfEdge   % edges that won't be modified
+        
     end
+
     methods
         function obj = SurfaceMesh(mesh)
         % constructor
@@ -92,6 +102,8 @@ classdef SurfaceMesh < handle
             elseif nargin~=0
                 error('incorrect number of inputs')
             end
+            
+            obj.setDefaultOptions()
             
         end
         function copy(obj,mesh)
@@ -123,6 +135,13 @@ classdef SurfaceMesh < handle
             obj.numFaces  = mesh.numFaces;
             obj.numNodeFields = mesh.numNodeFields;
             obj.numFaceFields = mesh.numFaceFields;
+
+            obj.coarsenOptions = mesh.coarsenOptions;
+            obj.refineOptions  = mesh.refineOptions;
+            obj.smoothOptions  = mesh.smoothOptions;
+
+            obj.isFixedVertex = mesh.isFixedVertex;
+            obj.isFixedHalfEdge = mesh.isFixedHalfEdge;
             
         end
         function initializeFromFaceData(obj,tempVertices,tempFaces)
@@ -197,6 +216,9 @@ classdef SurfaceMesh < handle
                     end
                 end
                 
+                obj.isFixedVertex   = zeros(obj.numVertices,1);
+                obj.isFixedHalfEdge = zeros(obj.numHalfEdges,1);
+
                 obj.degree = 1;
                 obj.isCurved = false;
                 
@@ -289,7 +311,47 @@ classdef SurfaceMesh < handle
                 
             end
         end
-        
+        function setDefaultOptions(obj)
+        % sets our default options for coarsening, refining, smoothing
+        %------------------------------------------------------------------
+            
+            obj.coarsenOptions.method = 'feature';
+            obj.coarsenOptions.averageCollapseVertexPosition = true;
+            obj.coarsenOptions.reproject = true;
+            obj.coarsenOptions.progressThreshold = 1000;
+            
+            obj.refineOptions.dihedralAngleThreshold = 9;
+            obj.refineOptions.numIterations = 1;
+            obj.refineOptions.maxLevel = 1;
+            
+            obj.smoothOptions.method = 'cotangent';
+            obj.smoothOptions.reproject = true;
+        end
+
+        function setFixedVertices(obj,vertices)
+        % set vertices that can't be changed
+        %------------------------------------------------------------------
+
+            obj.isFixedVertex(vertices) = 1;
+            for i = 1:length(vertices)
+                vertexi = vertices(i);
+                fixedHalfEdgesi = obj.spokeHalfEdges(vertexi);
+                obj.isFixedHalfEdge(fixedHalfEdgesi) = 1;
+            end
+
+            obj.numFixedVertices  = sum(obj.isFixedVertex);
+            obj.numFixedHalfEdges = sum(obj.isFixedHalfEdge);
+        end
+        function clearFixedVertices(obj)
+        % set vertices that can't be changed
+        %------------------------------------------------------------------
+            obj.isFixedVertex(:) = 0;
+            obj.isFixedHalfEdge(:) = 0;
+
+            obj.numFixedVertices  = 0;
+            obj.numFixedHalfEdges = 0;
+        end
+
         function addFaceField(obj,fieldData,fieldName)
         % adds a face field that can be export to vtk
         %------------------------------------------------------------------
@@ -1323,25 +1385,29 @@ classdef SurfaceMesh < handle
         % creates an offset surface mesh at a given altitude
         %------------------------------------------------------------------
         
+            if nargin < 3
+                numSamplePoints = obj.numVertices;
+            end
+
             altitudei=0.0;
             numWorkingFaces = 2000;
             tol = obj.resolution/100;
 
             % make a copy
             meshTemp = SurfaceMesh(obj);
-            meshTemp = meshTemp.flatten();
+            meshTemp.flatten();
             
             % fix this to take care of the case when we want more elements
             if (altitude < obj.resolution*5)
                 if (numSamplePoints<obj.numVertices)
-                    meshTemp = meshTemp.coarsen(numSamplePoints*2);
+                    meshTemp.coarsen(numSamplePoints*2);
                 end
                 meshTemp.coordinates = meshTemp.coordinates + altitude*meshTemp.vertexNormals();
             else  
                 
                 if meshTemp.numFaces > numWorkingFaces 
-                    meshTemp = meshTemp.coarsen(numWorkingFaces);
-                    meshTemp = meshTemp.smooth(5,'uniform',false);
+                    meshTemp.coarsen(numWorkingFaces);
+                    meshTemp.smooth(5,'uniform',false);
                 end
             
             
@@ -1365,12 +1431,12 @@ classdef SurfaceMesh < handle
                 
                     % make sure things behave properly
                     meshTemp.coordinates = meshTemp.coordinates+pointNormals.*(stepSize.*(1+minDist));
-                    meshTemp = meshTemp.coarsen(meshTemp.numFaces-24);
-                    meshTemp = meshTemp.smooth(5,'uniform',false);
+                    meshTemp.coarsen(meshTemp.numFaces-24);
+                    meshTemp.smooth(5,'uniform',false);
                 
                     % keep numFaces within range
                     if meshTemp.numFaces<numWorkingFaces/4
-                        meshTemp=meshTemp.refine();
+                        meshTemp.refine();
                     end
                     altitudei= altitudei+stepSize;
                 
@@ -1378,8 +1444,8 @@ classdef SurfaceMesh < handle
             
                 % now were going to step things up to final number of pts
                 %----------------------------------------------------------
-                meshTemp = meshTemp.setNumVertices(numSamplePoints);
-                meshTemp=meshTemp.smooth(10,'uniform',false);
+                meshTemp.setNumVertices(numSamplePoints);
+                meshTemp.smooth(10,'uniform',false);
                 
                 minDist = zeros(meshTemp.numVertices,1);
                 for i = 1:meshTemp.numVertices
@@ -1421,18 +1487,54 @@ classdef SurfaceMesh < handle
         function setNumFaces(obj,numFaces)
         % wrapper to refine/coarsen to a desired number of faces
         %------------------------------------------------------------------
+        % Inputs:
+        %   numFaces ------ number of desired faces
+        %   fixedVertices - vertices that won't be altered
+        %------------------------------------------------------------------
+
+            if round(numFaces/2.0) < obj.numFixedVertices
+                error("too many fixed vertices to coarsen that much")
+            end
+
+            % if we request more face refine
             while obj.numFaces<numFaces
                 obj.refine();
             end
+
+             % if projection is desired, store our original mesh
+            if obj.coarsenOptions.reproject
+                originalMesh = SurfaceMesh(obj);
+            end
+
+            % if we're are really dropping the node count use the faster 
+            % uniform algorthim for the bulk of it.
+            if strcmp(obj.coarsenOptions.method,'feature') &&...
+                numFaces*10 < obj.numFaces
+                obj.coarsen(numFaces*10,'uniform',false)
+            end
+
+            % finish things up
             obj.coarsen(numFaces);
+
+            % if projection is desired, do the deed
+            if obj.coarsenOptions.reproject
+                disp("  Projecting back onto original mesh")
+                obj.projectOnTo(originalMesh);
+            end
+
         end
         function setNumVertices(obj,numVertices)
         % wrapper to refine/coarsen to a desired number of Vertices
         %------------------------------------------------------------------
+        % Inputs:
+        %   numVertices --- number of desired vertices
+        %   fixedVertices - vertices that won't be altered
+        %------------------------------------------------------------------
+
             while obj.numVertices < numVertices
                 obj.refine();
             end
-            obj.coarsen(2*numVertices);
+            obj.setNumFaces(2*numVertices);
         end
         function edgeFlipAll(obj)
         % checks all edges for flippage
@@ -1708,7 +1810,7 @@ classdef SurfaceMesh < handle
                          
         end
         
-        function coarsen(obj,numFacesCoarse,method,averageCollapseVertices)
+        function coarsen(obj,numFacesCoarse,method,averageCollapse)
         % coarsens mesh attempting to maintain uniform mesh resolution
         %------------------------------------------------------------------
         % Edge collapse algorithm used to remove N vertices maintaining a
@@ -1733,41 +1835,51 @@ classdef SurfaceMesh < handle
         %      
         %------------------------------------------------------------------
         % Inputs:
-        %   N -- number of vertices to be removed from mesh
+        %   numFacesCoarse --- number of faces in our post-coarsened mesh
+        %   method ----------- override our default coarsening method set
+        %                      in coarsenOptions
+        %   averageCollapse -- override our default to turn on/off
+        %                      averaging of the collapse vertices
         %------------------------------------------------------------------
             disp('--------------------------------------------------')
             disp('Coarsening mesh')
             disp(['  initial numFaces: ',num2str(obj.numFaces)])
             disp('  progress...')
             
-            % make sure we have valid inputs
+            % check validity of numFaces
             if obj.numFaces < numFacesCoarse
                 error('requested a finer mesh from the coarsen method')
             elseif numFacesCoarse < 50
                 warning('requested very coarse mesh... algorithm may fail')
             end
             
+            % default inputs if not specified
             if nargin == 2
-                method = 'feature';
-                averageCollapseVertices = true;
-            elseif nargin == 3
-                method = lower(method);
-                averageCollapseVertices = true;
-                if ~(strcmp(method,'uniform') || strcmp(method,'feature'))
-                    error('coarsening method must be "uniform" or "feature"')
-                end    
+                method = obj.coarsenOptions.method;
+                averageCollapse = obj.coarsenOptions.averageCollapseVertexPosition;
+            elseif nargin <= 3
+                averageCollapse = obj.coarsenOptions.averageCollapseVertexPosition;
             elseif nargin~=4
                 error('Incorrect number of inputs. coarsen(numCoarseFaces,method,averageCollapseVertices)')
+            end
+            
+            % make sure we got a valid string input for our method
+            method = lower(method);
+            if ~(strcmp(method,'uniform') || strcmp(method,'feature'))
+                error('coarsening method must be "uniform" or "feature"')
             end
             
             % need to delete low valence nodes from mesh
             numVerticesCoarse = round(numFacesCoarse/2);
             numDeletedVertices = obj.numVertices-numVerticesCoarse;
             
+            if numVerticesCoarse < obj.numFixedVertices
+                error("too many fixed vertices to coarsen that much")
+            end
+
             % these should be inputs soon
             isFeatureBased = strcmp(method,'feature');
-            averageCollapse=averageCollapseVertices;
-            progressThreshold = 1000;
+            progressThreshold = obj.coarsenOptions.progressThreshold;
             lastProgressOutput = 1;
             thresholdResort = min(1000,numDeletedVertices/10);
             
@@ -1793,6 +1905,7 @@ classdef SurfaceMesh < handle
                 anglesHalfEdges = (angleVertices(obj.ends)+angleVertices(obj.ends(obj.pair)))/2;
                 lengths = lengths.*anglesHalfEdges;
             end
+            lengths(obj.isFixedHalfEdge==1) = nan;
             [~,sortIndex] = sort(lengths);
             
             % initialize iterators
@@ -1836,6 +1949,7 @@ classdef SurfaceMesh < handle
                     p1 = obj.ends(he1);
                     p3 = obj.ends(he4);
                     
+                    % flip collapse direction if better quality
                     p1Spokes =  obj.spokeHalfEdges(p1);
                     p3Spokes =  obj.spokeHalfEdges(p3);
                 
@@ -1913,7 +2027,9 @@ classdef SurfaceMesh < handle
 
                     % update lengths of modified edges from collapse
                     %------------------------------------------------------
-                    modifiedEdges =  obj.spokeHalfEdges(p3);
+                    modifiedEdges = obj.spokeHalfEdges(p3);
+                    modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
+                    modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
                     modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
                     if isFeatureBased
                         modifiedVertices = obj.collapseModifiedVertices(p3);
@@ -1929,6 +2045,8 @@ classdef SurfaceMesh < handle
                     % update lengths of modified edges from flips
                     %------------------------------------------------------
                     [modifiedEdges,modifiedVertices] = obj.edgeFlipModifiedRegion(p3);
+                    modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
+                    modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
                     modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
                     if isFeatureBased
                         angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
@@ -1936,9 +2054,9 @@ classdef SurfaceMesh < handle
                                           angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
                         modifiedLengths=modifiedLengths.*modifiedAngles;
                     end
-                    lengths(modifiedEdges)= modifiedLengths;
+                    lengths(modifiedEdges) = modifiedLengths;
                     isModifiedHalfEdge(modifiedEdges) = 1;
-
+                    
                     % track removed halfEdges
                     isModifiedHalfEdge(removedHalfEdges) = 2;
                     lengths(removedHalfEdges)=nan;
@@ -1960,13 +2078,9 @@ classdef SurfaceMesh < handle
                     end
                     
                     i = i+1;
-                else
-                    %lengths(he1) = lengths(he1)*2;
-                    %lengths(he4) = lengths(he4)*2;
                 end
                 
             end
-            
             
             % map old indices to new indices in the coarsened mesh
             iter = 0;
@@ -1985,6 +2099,10 @@ classdef SurfaceMesh < handle
                 end
             end
             
+            % read our fixed flags
+            obj.isFixedHalfEdge = obj.isFixedHalfEdge(halfEdgeFlags==0);
+            obj.isFixedVertex = obj.isFixedVertex(vertexFlags==0);
+
             % set relations to new indices
             obj.ends = vertexNewIndices(obj.ends);
             obj.pair = halfEdgeNewIndices(obj.pair);
@@ -1995,7 +2113,7 @@ classdef SurfaceMesh < handle
             obj.ends = obj.ends(halfEdgeFlags==0);
             obj.next = obj.next(halfEdgeFlags==0);
             obj.pair = obj.pair(halfEdgeFlags==0);
-            
+
             obj.coordinates = obj.coordinates(vertexFlags==0,:);
             obj.vertexHalfEdges = obj.vertexHalfEdges(vertexFlags==0,:);
             
@@ -2036,14 +2154,16 @@ classdef SurfaceMesh < handle
             % process our inputs
             if nargin == 2
                 method = "cotangent";
-            elseif nargin == 3
+            end
+            if nargin >= 3
                 if strcmp(method,"cotan") || strcmp(method,"cot")
                     method = "cotangent";
                 end
                 if ~strcmp(method,"cotangent")  && ~strcmp(method,"uniform") && ~strcmp(method,"area")
                     error('incorrect method specified "cotangent", "uniform" or "area"')
                 end
-            elseif nargin == 1 || nargin > 5
+            end
+            if nargin == 1 || nargin > 5
                 error('incorrect number of inputs: specific number of smoothing steps and optionally smoothing method')
             end
             if nargin < 4
@@ -2059,8 +2179,11 @@ classdef SurfaceMesh < handle
                     error('additional smoothing weights must be for vertices or faces')
                 end
             else
-                additionalWeights = ones(obj.numFaces,1);
+                additionalWeights = ones(obj.numVertices,1);
             end
+
+            % if its a fixed vertex don't let it move
+            additionalWeights(obj.isFixedVertex==1) = 0;
             
             % smooth rectilinear
             if obj.degree == 1
@@ -2764,7 +2887,6 @@ classdef SurfaceMesh < handle
             end
             
         end  
-        
         
         function [] = writeOBJ(obj,fileName,precision)
         % writes mesh to obj file
@@ -3651,7 +3773,9 @@ classdef SurfaceMesh < handle
             he4 = obj.pair(he1);
             he5 = obj.next(he4);
             
+            p1 = obj.ends(he1);
             p2 = obj.ends(he2);
+            p3 = obj.ends(he4);
             p4 = obj.ends(he5);
             
             p2NumSpokes = obj.numSpokes(p2);
@@ -3804,11 +3928,37 @@ classdef SurfaceMesh < handle
             v2 = coord3-coord2;
             v3 = coord4-coord3;
             v4 = coord1-coord4;
+           
+            % face normals (inlined critical code)
+            n1 = [v1(2).*v2(3) - v1(3).*v2(2),...
+                -v1(1).*v2(3) + v1(3).*v2(1),...
+                v1(1).*v2(2) - v1(2).*v2(1)];
+            n2 = [v3(2).*v4(3) - v3(3).*v4(2),...
+                -v3(1).*v4(3) + v3(3).*v4(1),...
+                v3(1).*v4(2) - v3(2).*v4(1)];
+            n3 = [v4(2).*v1(3) - v4(3).*v1(2),...
+                -v4(1).*v1(3) + v4(3).*v1(1),...
+                v4(1).*v1(2) - v4(2).*v1(1)];
+            n4 = [v2(2).*v3(3) - v2(3).*v3(2),...
+                -v2(1).*v3(3) + v2(3).*v3(1),...
+                v2(1).*v3(2) - v2(2).*v3(1)];
+            n1Mag = sqrt(n1(1).*n1(1) + n1(2).*n1(2) + n1(3).*n1(3));
+            n2Mag = sqrt(n2(1).*n2(1) + n2(2).*n2(2) + n2(3).*n2(3));
+            n3Mag = sqrt(n3(1).*n3(1) + n3(2).*n3(2) + n3(3).*n3(3));
+            n4Mag = sqrt(n4(1).*n4(1) + n4(2).*n4(2) + n4(3).*n4(3));
+            n1 = n1./n1Mag;
+            n2 = n2./n2Mag;
+            n3 = n3./n3Mag;
+            n4 = n4./n4Mag;
             
+            % dihedral angles
+            dihedral1 = sum(n1.*n2);
+            dihedral2 = sum(n3.*n4);
+
             % split vectors
             v5 = coord3-coord1;
             v6 = coord4-coord2;
-            
+
             % lengths
             d1 = sqrt(v1(1).*v1(1)+v1(2).*v1(2)+v1(3).*v1(3));
             d2 = sqrt(v2(1).*v2(1)+v2(2).*v2(2)+v2(3).*v2(3));
@@ -3816,24 +3966,26 @@ classdef SurfaceMesh < handle
             d4 = sqrt(v4(1).*v4(1)+v4(2).*v4(2)+v4(3).*v4(3));
             d5 = sqrt(v5(1).*v5(1)+v5(2).*v5(2)+v5(3).*v5(3));
             d6 = sqrt(v6(1).*v6(1)+v6(2).*v6(2)+v6(3).*v6(3));
-            
+
             % angles of triangles along quadralateral split
-            angle1A = acosd(-(v5(1).*v4(1)+v5(2).*v4(2)+v5(3).*v4(3))/(d4*d5));          
-            angle1B = acosd((v5(1).*v1(1)+v5(2).*v1(2)+v5(3).*v1(3))/(d1*d5));             
-            angle2A = acosd(-(v6(1).*v1(1)+v6(2).*v1(2)+v6(3).*v1(3))/(d1*d6));          
-            angle2B = acosd((v6(1).*v2(1)+v6(2).*v2(2)+v6(3).*v2(3))/(d2*d6));   
+            angle1A = acosd(-(v5(1).*v4(1)+v5(2).*v4(2)+v5(3).*v4(3))/(d4*d5));
+            angle1B = acosd((v5(1).*v1(1)+v5(2).*v1(2)+v5(3).*v1(3))/(d1*d5));
+            angle2A = acosd(-(v6(1).*v1(1)+v6(2).*v1(2)+v6(3).*v1(3))/(d1*d6));
+            angle2B = acosd((v6(1).*v2(1)+v6(2).*v2(2)+v6(3).*v2(3))/(d2*d6));
             angle3A = acosd((v2(1).*v5(1)+v2(2).*v5(2)+v2(3).*v5(3))/(d2*d5));
             angle3B = acosd(-(v3(1).*v5(1)+v3(2).*v5(2)+v3(3).*v5(3))/(d3*d5));
-            angle4A = 180-angle2B-angle3A-angle3B;        
+            angle4A = 180-angle2B-angle3A-angle3B;
             angle4B = 180-angle2A-angle1A-angle1B;
-   
+
             currentMinAngle = min([angle1A,angle1B,angle3A,angle3B]);
             flippedMinAngle = min([angle2A,angle2B,angle4A,angle4B]);
-            
+
             maxQuadAngles = max(angle1A+angle1B, angle3A+angle3B);
             
-            
-            if flippedMinAngle > 1.1*currentMinAngle && maxQuadAngles<175
+            % conditions for flip
+            isFlippable1 = flippedMinAngle > 1.1*currentMinAngle && maxQuadAngles<175;
+            isFlippable2 = flippedMinAngle > 10 && dihedral2 > dihedral1+0.2;
+            if isFlippable2 || isFlippable1
                 flip=true;
             end
            

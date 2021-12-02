@@ -9,7 +9,8 @@ classdef VolumeMesh < handle
 % and masses. 
 % 
 % it is assumed that the surface mesh vertices are the first set of nodes 
-% followed by internal vertices and then any higher degree nodes.
+% followed by internal vertices and then any higher degree nodes e.g. 
+% edges, faces, and cell center.
 %--------------------------------------------------------------------------
 % Abreviations:
 %       e ----- unique edge
@@ -21,6 +22,7 @@ classdef VolumeMesh < handle
 %       A ----- area vector
 %       n ----- unit normal
 %--------------------------------------------------------------------------
+    
     properties (GetAccess=public)
         coordinates         % coordinates of nodes
         cells               % cells (node indices)

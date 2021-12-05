@@ -1496,7 +1496,7 @@ classdef SurfaceMesh < handle
                 error("too many fixed vertices to coarsen that much")
             end
 
-            % if we request more face refine
+            % if we request more faces refine
             while obj.numFaces<numFaces
                 obj.refine();
             end

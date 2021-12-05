@@ -71,7 +71,7 @@ classdef AnalyticPolyhedralModel
             end
             
             % make sure its degree is 1
-            mesh = mesh.flatten;
+            mesh.flatten;
             
             [edges,edgeHalfEdges,~] = mesh.edges();
             edgeFaces = ceil(edgeHalfEdges/3);

@@ -9,7 +9,7 @@ Omega = bodyProperties.rotationRate;   %
 % some model parameters
 meshfile = 'Bennu_200000.obj';    % mesh file to load 
 mesh = SurfaceMesh(meshfile);   % create the surface mesh object
-mesh = mesh.setNumFaces(50000);
+mesh.setNumFaces(50000);
 %mesh = mesh.center();
 
 meshOriginal = mesh;
@@ -17,24 +17,25 @@ meshOriginal = mesh;
 i=1;
 quadRules = [1,2,3,4];
 baseLine = AnalyticPolyhedralModel(mesh,Mu);
-mesh = mesh.setNumFaces(23500);
+meshCoarse = SurfaceMesh(mesh);
+meshCoarse.setNumFaces(23500);
 while mesh.numVertices>1050
-    mesh=mesh.coarsen(mesh.numFaces-500);
-    mesh=mesh.smooth(10,'uniform',false);
-    mesh.coordinates=meshOriginal.project(mesh.coordinates,mesh.vertexNormals());
-    mesh=mesh.coarsen(mesh.numFaces-1);
+    meshCoarse.coarsen(mesh.numFaces-2000);
+    meshCoarse.smooth(10,'uniform',false);
+    meshCoarse.coordinates=meshOriginal.project(mesh.coordinates,mesh.vertexNormals());
+    meshCoarse.coarsen(mesh.numFaces-1);
     %mesh = mesh.center();
     res(i) = mesh.resolution;
     numFaces(i) = mesh.numFaces;
     polyhedralModel{i} = AnalyticPolyhedralModel(mesh,Mu);
     for j = 1:length(quadRules)
-        meshCurve = mesh.setDegree(quadRules(j));   % make a P2 mesh
-        meshCurve = meshCurve.curve(meshOriginal);
+        meshCoarse.setDegree(quadRules(j));   % make a P2 mesh
+        meshCoarse.curve(meshOriginal);
         %meshCurve = meshCurve.center()
-        quadratureModel{i}{j} = ApproximatePolyhedralModel(meshCurve,Mu);
+        quadratureModel{i}{j} = ApproximatePolyhedralModel(meshCoarse,Mu);
         numNodes2(i,j) = quadratureModel{i}{j}.numElements;
     end
-    i=i+1
+    i=i+1;
 end
 
 

@@ -11,14 +11,15 @@ numIters = 4;
 
 % set up meshes
 mesh = SurfaceMesh(meshfile);              % create the surface mesh object
-meshCoarse = mesh.coarsen(8000);           % create coarsened version
-meshCoarse = meshCoarse.smooth(5);         % smooth things out
+meshCoarse = SurfaceMesh(mesh);            % copy construct
+meshCoarse.coarsen(8000);                  % create coarsened version
+meshCoarse.smooth(1);                      % smooth things out
 
-meshCoarseP2 = mesh.coarsen(2000);
-%meshCoarseP2 = meshCoarseP2.refineFeatures(mesh,2,9,2);
-meshCoarseP2 = meshCoarseP2.smooth(5);
-meshCoarseP2 = meshCoarseP2.setDegree(2);   % make a P2 mesh
-meshCoarseP2 = meshCoarseP2.curve(mesh);    % curve mesh through projection
+meshCoarseP2 = SurfaceMesh(mesh);
+meshCoarseP2.coarsen(2000);
+meshCoarseP2.smooth(1);
+meshCoarseP2.setDegree(2);   % make a P2 mesh
+meshCoarseP2.curve(mesh);    % curve mesh through projection
 
 % set up gravity models 
 quadratureModelFullRes = ApproximatePolyhedralModel(mesh,Mu);
@@ -27,9 +28,11 @@ quadratureModelP2   = ApproximatePolyhedralModel(meshCoarseP2,Mu);
 analyticModelTruth  = AnalyticPolyhedralModel(mesh,Mu);
 analyticModelCoarse = AnalyticPolyhedralModel(meshCoarse,Mu);
 
-% create volume mesh around body
+% create volume mesh around body. We're manually creating this for now
+%--------------------------------------------------------------------------
+% offseting outward
 volumePoints = [mesh.coordinates];
-sm2 = mesh;
+sm2 = SurfaceMesh(mesh);
 newVertexCount = floor(mesh.numVertices);
 h = zeros(size(volumePoints,1),1);
 hnew=0.0;
@@ -41,8 +44,8 @@ for i = 1:numIters
     newVertexCount = newVertexCount-1000;
 end
 
-
-sm3 = mesh;
+% offsetting inward
+sm3 = SurfaceMesh(mesh);
 newVertexCount = floor(mesh.numVertices);
 hnew=0.0;
 for i = 1:numIters
@@ -52,19 +55,11 @@ for i = 1:numIters
     volumePoints = [volumePoints;sm3.coordinates];
     newVertexCount = newVertexCount-1000;
 end
+%--------------------------------------------------------------------------
 
-disp('here we are')
 volumeMesh = VolumeMesh(mesh);
-volumeMesh.coordinates = volumePoints;
-volumeMesh.numVertices = size(volumePoints,1);
-volumeMesh = volumeMesh.delaunayTriangulation();
-volumeMesh.numVertices
-volumeMesh.surfaceMesh = sm2;
-disp('here we are')
-volumeMesh = volumeMesh.clipExternalCells();
+volumeMesh.initializeFromPointCloud(volumePoints);
 
-
-disp('here we are')
 % calculation our field values at the nodes
 pts = volumeMesh.coordinates;
 truthAcceleration = analyticModelTruth.acceleration(pts);
@@ -82,18 +77,18 @@ epsPoly = 100*vecnorm(truthAcceleration-polyhedralAcceleration,2,2)./vecnorm(tru
 
 
 % load the fields in and export for viewing w/ paraview
-volumeMesh = volumeMesh.clearFields();
-volumeMesh = volumeMesh.addNodeField(h,'altitude');
-volumeMesh = volumeMesh.addNodeField(lap_fR,'lap_fR2');
-volumeMesh = volumeMesh.addNodeField(lap_QM,'lap_QM');
-volumeMesh = volumeMesh.addNodeField(lap_QMP2,'lap_QMP2');
-volumeMesh = volumeMesh.addNodeField(epsTotP2,'epsP2');
-volumeMesh = volumeMesh.addNodeField(epsNumP1,'epsP1');
-volumeMesh = volumeMesh.addNodeField(epsPoly,'epsPoly');
-volumeMesh = volumeMesh.addNodeField(approximateAcceleration,'acc_P1');
-volumeMesh = volumeMesh.addNodeField(approximateAccelerationP2,'acc_P2');
-volumeMesh = volumeMesh.addNodeField(polyhedralAcceleration,'acc_poly');
-volumeMesh = volumeMesh.addNodeField(truthAcceleration,'acc');
+volumeMesh.clearFields();
+volumeMesh.addNodeField(h,'altitude');
+volumeMesh.addNodeField(lap_fR,'lap_fR2');
+volumeMesh.addNodeField(lap_QM,'lap_QM');
+volumeMesh.addNodeField(lap_QMP2,'lap_QMP2');
+volumeMesh.addNodeField(epsTotP2,'epsP2');
+volumeMesh.addNodeField(epsNumP1,'epsP1');
+olumeMesh.addNodeField(epsPoly,'epsPoly');
+volumeMesh.addNodeField(approximateAcceleration,'acc_P1');
+volumeMesh.addNodeField(approximateAccelerationP2,'acc_P2');
+volumeMesh.addNodeField(polyhedralAcceleration,'acc_poly');
+volumeMesh.addNodeField(truthAcceleration,'acc');
 volumeMesh.writeVTK('testExternalMeshOut.vtk')
 
 

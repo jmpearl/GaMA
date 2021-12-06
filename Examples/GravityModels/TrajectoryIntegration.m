@@ -17,14 +17,16 @@ Omega = bodyProperties.rotationRate;
 %--------------------------------------------------------------------------
 meshFile = 'Eros_7624.obj';    % define surface mesh file
 mesh = SurfaceMesh(meshFile);  % create tri surface mesh
-mesh = mesh.coarsen(2000);     % coursen to 2000 faces
+mesh.coarsen(2000);            % coursen to 2000 faces
 
 % set up the gravity models
 %--------------------------------------------------------------------------
-gravityModel1 = AnalyticPolyhedralModel(mesh,Mu);    % Werner 1994
-% gravityModel2 = MasconModel(mesh,Mu/2);             % Chanut et al 2015
+gravityModel = AnalyticPolyhedralModel(mesh,Mu);     % Werner 1994
+% gravityModel2 = MasconModel(mesh,Mu/2);            % Chanut et al 2015
 
-gravityModel = CompositeModel(gravityModel1);        % superpose models
+%gravityModel = CompositeModel(gravityModel1,...
+%                              gravityModel2);       % superpose models
+
 
 % Integrate in the Body Fixed Frame
 %--------------------------------------------------------------------------

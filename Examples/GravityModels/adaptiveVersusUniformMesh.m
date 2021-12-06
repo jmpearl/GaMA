@@ -4,7 +4,8 @@
 % Dec 4 2021
 %==========================================================================
 % compares the accuracy of the polyhedral gravity model using feature 
-% adapted and unform meshes
+% adapted and unform meshes. The feature-based is actaully
+% worse.
 %--------------------------------------------------------------------------
 clear all; close all; clc;
 addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
@@ -13,15 +14,15 @@ addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
 Mu=1;
 
 % options
-isCentered=false;
+isCentered=true;
 
 % plot options
 markers = ["ko","ks","k^","k>","kv","k<","kp","kh"];
 mfc = ['m','r','y','g','c','b','k'];
 
 % base mesh file
-%surfaceMeshName = 'Eros_46906.obj';
-surfaceMeshName = 'Itokawa_50000.obj';
+surfaceMeshName = 'Eros_46906.obj';
+%surfaceMeshName = 'Itokawa_50000.obj';
 
 % Set our meshes
 smOriginal = SurfaceMesh(surfaceMeshName);
@@ -30,28 +31,28 @@ smUniform  = SurfaceMesh(smOriginal);
 smUniform.coarsenOptions.method = 'uniform';
 
 % point sets to assess error 
-ptsSurface = smOriginal.coordinates(randi(smOriginal.numVertices,200,1));
-%[ptsBrillouinSphere,~] = uniformSphericalTiling(6);
-offsetMesh = smOriginal.offsetSurfaceMesh(500, 500);%ptsBrillouinSphere.*max(vecnorm(ptsSurface,2,2))*1.05;
-ptsBrillouinSphere = offsetMesh.coordinates;%ptsBrillouinSphere.*max(vecnorm(ptsSurface,2,2))*1.05;
+ptsSurface = smOriginal.coordinates(randi(smOriginal.numVertices,100,1));
+offsetDistance = max(vecnorm(ptsSurface,2,2));
+offsetMesh = smOriginal.offsetSurfaceMesh(offsetDistance, 200);
+ptsBrillouinSphere = offsetMesh.coordinates;
 
 % loop through and deterine accuracy
 i=1;
-numFaces = round(smOriginal.numFaces*2/3);
+numFaces = round(smOriginal.numFaces*1/2); % start at 1/2 the original res
 while numFaces(end) > 10000
     
     % coarsen
-    numFaces(i) = numFaces(end) - 10000;
+    numFaces(i) = numFaces(end) - 2000;
     smFeature.setNumFaces(numFaces(i));
     smUniform.setNumFaces(numFaces(i));
 
     % create our curved meshes
     smFeatureP2 = SurfaceMesh(smFeature);
     smFeatureP2.setDegree(2)
-    smFeatureP2.projectOnTo(smOriginal);
+    smFeatureP2.curve(smOriginal);
     smUniformP2 = SurfaceMesh(smUniform);
     smUniformP2.setDegree(2)
-    smUniformP2.projectOnTo(smOriginal);
+    smUniformP2.curve(smOriginal);
 
     % center the meshes if requested
     if isCentered
@@ -67,9 +68,10 @@ while numFaces(end) > 10000
 
     % volume & center of mass error
     for j = 1:length(sm)
-        volumeError(i,j) = (sm(j).volume-smOriginal.volume)/smOriginal.volume;
-        comError(i,j) = norm(sm(j).centroid-smOriginal.centroid);
+        volumeError(i,j) = 100*(sm(j).volume-smOriginal.volume)/smOriginal.volume;
+        comError(i,j) = 100*norm(sm(j).centroid-smOriginal.centroid);
     end
+
     % gravity models 
     gm{1} = AnalyticPolyhedralModel(smOriginal,Mu);
     gm{2} = AnalyticPolyhedralModel(smFeature,Mu);
@@ -87,17 +89,17 @@ while numFaces(end) > 10000
 
     % error rel to original mesh analytic polyhedral model
     for j = 1:length(gm)
-        accSurfaceError(i,j) = mean(vecnorm(accSurface{j}-accSurface{1},2,2)./...
-                                vecnorm(accSurface{1},2,2));
-        accBrillouinError(i,j) = mean(vecnorm(accBrillouin{j}-accBrillouin{1},2,2)./...
-                                vecnorm(accBrillouin{1},2,2));
+        accSurfaceError(i,j) = 100*mean(vecnorm(accSurface{j}-accSurface{1},2,2)./...
+                                        vecnorm(accSurface{1},2,2));
+        accBrillouinError(i,j) = 100*mean(vecnorm(accBrillouin{j}-accBrillouin{1},2,2)./...
+                                          vecnorm(accBrillouin{1},2,2));
     end
 
     % store our mesh resolution
     resolution(i) = smUniform.resolution;
     i=i+1;
-end
 
+end
 
 
 figure(1)
@@ -125,8 +127,8 @@ for i = 1:size(accSurfaceError,2)
 end
 set(gcf,'Color',[1,1,1])
 xlabel('number of faces','Interpreter','latex')
-ylabel('$\epsilon(\mathbf{a})$','Interpreter','latex')
-legend('Original','Analytic-f','Analytic-u','ApproxP1-f','ApproxP1-u','ApproxP2-f','ApproxP2-u')
+ylabel('acceleration error %','Interpreter','latex')
+legend('Original','Analytic-feature','Analytic-uniform','ApproxP1-feature','ApproxP1-uniform','ApproxP2-feature','ApproxP2-uniform')
 
 figure(3)
 hold on
@@ -134,6 +136,7 @@ for i = 1:size(accSurfaceError,2)
     plot(numFaces,accBrillouinError(:,i),markers(i),'MarkerFaceColor',mfc(i))
 end
 set(gcf,'Color',[1,1,1])
+title('at altitude equal to')
 xlabel('number of faces','Interpreter','latex')
-ylabel('$\epsilon(\mathbf{a})$','Interpreter','latex')
-legend('Original','Analytic-f','Analytic-u','ApproxP1-f','ApproxP1-u','ApproxP2-f','ApproxP2-u')
+ylabel('acceleration error %','Interpreter','latex')
+legend('Original','Analytic-feature','Analytic-uniform','ApproxP1-feature','ApproxP1-uniform','ApproxP2-feature','ApproxP2-uniform')

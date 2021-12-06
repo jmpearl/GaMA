@@ -132,19 +132,32 @@ classdef VolumeMesh < handle
 
         end
 
-        function initializeFromPointCloud(obj,internalCoordinates)
+        function initializeFromPointCloud(obj,internalCoordinates,clipZone)
         % constructions mesh from set of internal vertices
         %------------------------------------------------------------------
         % Inputs:
         %   internalCoordinates -- internal mesh vertices
+        %   clipZone ------------- 'internal' or 'external'
         %------------------------------------------------------------------
+            if nargin == 3
+               clipZone = lower(clipZone)
+               assert (strcmp(clipZone,'internal') || strcmp(clipZone,'external'),"incorrect clipzone must be 'internal' or 'external'")
+            elseif nargin == 2
+                clipZone = 'None';
+            else
+                error('incorrect number of inputs')
+            end
+
 
             obj.coordinates = [obj.surfaceMesh.coordinates;internalCoordinates];
             obj.numVertices = size(obj.coordinates,1);
             obj.numNodes = size(obj.coordinates,1);
             obj.delaunayTriangulation();
-            obj.clipExternalCells();
-
+            if strcmp(clipZone,'internal')
+                obj.clipExternalCells();
+            elseif strcmp(clipZone,'external')
+                obj.clipInternalCells();
+            end
             obj.isBoundaryNode = zeros(obj.numNodes,1);
             obj.isBoundaryNode(1:obj.surfaceMesh.numVertices) = 1;
             obj.numBoundaryVertices = sum(obj.isBoundaryNode);

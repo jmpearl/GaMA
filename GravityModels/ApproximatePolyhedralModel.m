@@ -57,6 +57,7 @@ properties (GetAccess=public)
             end
             obj.GrhoAn = Mu/mesh.volume*Aq;
             obj.res = sqrt(vecnorm(obj.GrhoAn/Mu*mesh.volume,2,2))/4;
+            obj.res = max(obj.res,mesh.resolution/100);
             obj.numElements = size(Aq,1);
             
             

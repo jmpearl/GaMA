@@ -7,12 +7,13 @@ The Gravitational and Mesh Adaptation library is a set of optimized matlab class
 - mascon model 
 - approximate polyhedral model [3]
 - curvilinear surface model
+- third body model
 
 ###### Meshing
 - surface mesh class with:
-  - array-base half-edge data structure, mesh repair, smoothing, coarsening, refining, feature-based refinement, quadrature rule generation, and plotting utilities
+  - an efficient array-base half-edge data structure, curvilinear faces up to degree 4, mesh repair, smoothing, coarsening, refinement, projection, quadrature rule generation, and plotting utilities.
 - volume mesh class with:
-  - graded mesh generation, mesh smoothing quadrature rule generation
+  - array based face-vertex data structure, curvilinear cells up to degree 2, graded mesh generation, mesh smoothing, quadrature rule generation
 
 
 ###### References

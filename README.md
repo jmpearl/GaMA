@@ -2,14 +2,14 @@
 The Gravitational and Mesh Adapatation library is a set of optimized matlab classes used to model the gravitational fields of asteroids and comets. It contains associated 
 
 ###### Gravitational Model
--analytic polyhedral model [1]
--spherical harmonic model [2]
--mascon model 
--approximate polyhedral model [3]
--curvilinear surface model
+- analytic polyhedral model [1]
+- spherical harmonic model [2]
+- mascon model 
+- approximate polyhedral model [3]
+- curvilinear surface model
 
 ###### Meshing
--surface mesh class with:
+- surface mesh class with:
 - - array-base half-edge data structure
 - - mesh repair
 - - smoothing

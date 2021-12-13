@@ -1,5 +1,5 @@
 # GaMA
-The Gravitational and Mesh Adapatation library is a set of optimized matlab classes used to model the gravitational fields of asteroids and comets. It contains a number of supporting classes and functions required to initialize gravitational models, integrate trajectories, post process results, and make relevant plots.  
+The Gravitational and Mesh Adaptation library is a set of optimized matlab classes used to model the gravitational fields of asteroids and comets. It contains a number of supporting classes and functions required to initialize gravitational models, integrate trajectories, post-process results, and make relevant plots.  
 
 ###### Gravitational Model
 - analytic polyhedral model [1]

@@ -171,9 +171,9 @@ classdef SphericalHarmonicModel
                 ra = [p(1,:)*p(1,:)';...
                     2*p(1,:)*p(2,:)';...
                     2*p(1,:)*p(3,:)';...
-                    p(2,:)*p(2,:)';...
+                      p(2,:)*p(2,:)';...
                     2*p(2,:)*p(3,:)';...
-                    p(3,:)*p(3,:)']; % [xx;xy;xz;yy;yz;zz]
+                      p(3,:)*p(3,:)']; % [xx;xy;xz;yy;yz;zz]
                 
                 cd = 1/sqrt(3); % first coeff in diagonal recursion
                 
@@ -445,19 +445,20 @@ classdef SphericalHarmonicModel
                 
             for m=1:N
                 
-                C_d(:,2) = cd*(xa.*C_d(:,1)-ya.*S_d(:));
-                S_d(:) = cd*(ya.*C_d(:,1)+xa.*S_d(:));
-                C_d(:,1)=C_d(:,2);
+                C_d(:,2) = cd*(xa.*C_d(:,1) - ya.*S_d(:));
+                S_d(:)   = cd*(ya.*C_d(:,1) + xa.*S_d(:));
+                C_d(:,1) = C_d(:,2);
                 
                 obj.C(m+1,m+1) = (mu'*C_d(:,1));
                 obj.S(m+1,m+1) = (mu'*S_d(:));
                     
-                C_v(:,2:3)=0;
-                C_v(:,1) = C_d(:,1);
-                S_v(:,2:3)=0;
-                S_v(:,1) = S_d(:);
+                C_v(:,2:3) = 0;
+                C_v(:,1)   = C_d(:,1);
+                S_v(:,2:3) = 0;
+                S_v(:,1)   = S_d(:);
                 
                 cd  = (2*m+1)/sqrt((2*m+2)*(2*m+3));
+                
                 for n = m+1:N
                     c1 = (2*n-1)*sqrt((2*n-1)/((2*n+1)*(n+m)*(n-m)));
                     c2 = sqrt(((2*n-3)*(n+m-1)*(n-m-1))/((2*n+1)*(n+m)*(n-m)));

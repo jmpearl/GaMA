@@ -74,7 +74,6 @@ classdef SurfaceMesh < handle
 
         isFixedVertex     % vertices that won't be modified
         isFixedHalfEdge   % edges that won't be modified
-        
     end
 
     methods
@@ -315,7 +314,7 @@ classdef SurfaceMesh < handle
         % sets our default options for coarsening, refining, smoothing
         %------------------------------------------------------------------
             
-            obj.coarsenOptions.method = 'feature';
+            obj.coarsenOptions.method = 'uniform';
             obj.coarsenOptions.averageCollapseVertexPosition = true;
             obj.coarsenOptions.reproject = true;
             obj.coarsenOptions.progressThreshold = 1000;
@@ -325,7 +324,7 @@ classdef SurfaceMesh < handle
             obj.refineOptions.maxLevel = 1;
             
             obj.smoothOptions.method = 'cotangent';
-            obj.smoothOptions.reproject = true;
+            obj.smoothOptions.reproject = false;
         end
 
         function setFixedVertices(obj,vertices)
@@ -1094,6 +1093,14 @@ classdef SurfaceMesh < handle
                  sqrt(normals(:,1).^2+normals(:,2).^2+normals(:,3).^2);
         end
         
+        function resetBulkProperties(obj)
+        % resets stored bulk properties
+        %------------------------------------------------------------------
+            obj.volume = obj.calculateVolume();
+            obj.surfaceArea = obj.calculateSurfaceArea();
+            obj.centroid = obj.calculateCentroid();
+            obj.resolution = obj.calculateResolution();
+        end
         function volume = calculateVolume(obj)
         % volume contained in mesh
         %------------------------------------------------------------------
@@ -1518,7 +1525,6 @@ classdef SurfaceMesh < handle
 
             % if projection is desired, do the deed
             if obj.coarsenOptions.reproject
-                disp("  Projecting back onto original mesh")
                 obj.projectOnTo(originalMesh);
             end
 
@@ -1553,14 +1559,12 @@ classdef SurfaceMesh < handle
         %            v /               |
         %             o p4             |
         %------------------------------------------------------------------
-            disp('--------------------------------------------------')
-            disp('Flipping non-Delaunay edges')
-            disp('  progress...')
-            % create our "stack"
+         
             flipStack = linspace(1,obj.numHalfEdges,obj.numHalfEdges)';
             flipStack = flipStack(flipStack < obj.pair);
             
             % things needed to track progress
+            progressMeter = progressbar('Flipping non-Delaunay edges : ');
             stackLength = length(flipStack);
             stackThresh=length(flipStack);
             stackThreshStep=length(flipStack)/100;
@@ -1574,8 +1578,7 @@ classdef SurfaceMesh < handle
                 
                 % track our progress
                 if stackLength < stackThresh
-                    percentComplete = 100*(1-stackThresh/initialStackLength);
-                    disp(['    ',num2str(percentComplete),'%'])
+                    progressMeter.update(100*(1-stackLength/initialStackLength));
                     stackThresh = stackThresh-stackThreshStep;
                 end
                 
@@ -1602,7 +1605,12 @@ classdef SurfaceMesh < handle
             
             % clear out invalidated face fields 
             obj.numFaceFields = 0;
-            obj.faceFields = [];        
+            obj.faceFields = [];
+
+            % recalc bulk volume, surface area, etc
+            obj.resetBulkProperties();
+            progressMeter.close();
+
         end  
         function curve(obj,mesh)
         % projects nodes of  a degree > 1 mesh onto a finer mesh
@@ -1627,9 +1635,7 @@ classdef SurfaceMesh < handle
             obj.coordinates = mesh.project(obj.coordinates, normals);
             obj.isCurved = true;
             
-            obj.volume = obj.calculateVolume();
-            obj.surfaceArea = obj.calculateSurfaceArea();
-            obj.centroid = obj.calculateCentroid();
+            obj.resetBulkProperties();
             obj.clearFields();
         end
         function setDegree(obj,degree)
@@ -1800,9 +1806,7 @@ classdef SurfaceMesh < handle
                 obj.isCurved=false;
                 obj.degree = 1;
                 
-                obj.volume = obj.calculateVolume();
-                obj.surfaceArea = obj.calculateSurfaceArea();
-                obj.centroid = obj.calculateCentroid();
+                obj.resetBulkProperties();
                 obj.clearFields();
             end
             
@@ -1841,11 +1845,7 @@ classdef SurfaceMesh < handle
         %   averageCollapse -- override our default to turn on/off
         %                      averaging of the collapse vertices
         %------------------------------------------------------------------
-            disp('--------------------------------------------------')
-            disp('Coarsening mesh')
-            disp(['  initial numFaces: ',num2str(obj.numFaces)])
-            disp('  progress...')
-            
+
             % check validity of numFaces
             if obj.numFaces < numFacesCoarse
                 error('requested a finer mesh from the coarsen method')
@@ -1865,67 +1865,58 @@ classdef SurfaceMesh < handle
             
             % make sure we got a valid string input for our method
             method = lower(method);
+            isFeatureBased = strcmp(method,'feature');
             if ~(strcmp(method,'uniform') || strcmp(method,'feature'))
                 error('coarsening method must be "uniform" or "feature"')
             end
             
-            % need to delete low valence nodes from mesh
+            % set our vertex counts 
             numVerticesCoarse = round(numFacesCoarse/2);
             numDeletedVertices = obj.numVertices-numVerticesCoarse;
-            
             if numVerticesCoarse < obj.numFixedVertices
                 error("too many fixed vertices to coarsen that much")
             end
-
-            % these should be inputs soon
-            isFeatureBased = strcmp(method,'feature');
-            progressThreshold = obj.coarsenOptions.progressThreshold;
-            lastProgressOutput = 1;
-            thresholdResort = min(1000,numDeletedVertices/10);
             
             % process our mesh 
             obj.flatten();      % only valid for rectilinear meshes
             obj.edgeFlipAll();  % make sure we're delaunay
             
             % prealloc our flagging arrays
-            vertexNewIndices   = zeros(obj.numVertices,1);
             vertexFlags        = zeros(obj.numVertices,1);
-            halfEdgeNewIndices = zeros(obj.numHalfEdges,1);
             halfEdgeFlags      = zeros(obj.numHalfEdges,1);
             isModifiedHalfEdge = zeros(obj.numHalfEdges,1);
-            
             
             numSpokes = obj.vertexSpokeCounts();
             lowValenceCandidates = obj.vertexHalfEdges(find(numSpokes==3));
                 
             % metrics for edge collapse
-            lengths = obj.halfEdgeLengths();
-            if isFeatureBased
-                angleVertices = obj.vertexAverageAngles();
-                anglesHalfEdges = (angleVertices(obj.ends)+angleVertices(obj.ends(obj.pair)))/2;
-                lengths = lengths.*anglesHalfEdges;
-            end
-            lengths(obj.isFixedHalfEdge==1) = nan;
-            [~,sortIndex] = sort(lengths);
+            selectionMetric = obj.initializeSelectionMetric(isFeatureBased);
+            selectionMetric(obj.isFixedHalfEdge==1) = nan;
+            [~,sortIndex] = sort(selectionMetric);
             
             % initialize iterators
             iSortVector=1; % track how deep into sorted metric vec we are
             i=1;           % tracks number of collapses
             
+            % track our progress
+            progressMeter = progressbar('Collapsing Edges            : ');
+            progressThreshold = obj.coarsenOptions.progressThreshold;
+            lastProgressOutput = 1;
+
+            thresholdResort = min(1000,numDeletedVertices/10);
+
             while i <= numDeletedVertices
-                
                 
                 % print our progress 
                 if mod(i,progressThreshold)==0 && lastProgressOutput<i
                     lastProgressOutput = i;
-                    percentComplete = 100*i/numDeletedVertices;
-                    disp(['    ',num2str(percentComplete),'%'])
+                    progressMeter.update(100*i/numDeletedVertices);
                 end
                    
-                % update our metric every so often
-                if mod(iSortVector,thresholdResort)==0  
-                    isModifiedHalfEdge(isModifiedHalfEdge==1)=0;
-                    [~,sortIndex] = sort(lengths);
+                % resort our metric every so often
+                if mod(iSortVector,thresholdResort)==0
+                    isModifiedHalfEdge(isModifiedHalfEdge==1) = 0;
+                    [~,sortIndex] = sort(selectionMetric);
                     iSortVector=1;
                     thresholdResort = floor(max(min(2500,(numDeletedVertices-i)/10),100));
                 end
@@ -1942,6 +1933,8 @@ classdef SurfaceMesh < handle
 
                 % step our sort index
                 iSortVector = iSortVector+1;
+
+                % if things checkout do the collapse
                 if (isModifiedHalfEdge(he1)==0) && obj.isValidCollapse(he1)
 
                     % select collapse direction
@@ -1950,26 +1943,26 @@ classdef SurfaceMesh < handle
                     p3 = obj.ends(he4);
                     
                     % flip collapse direction if better quality
-                    p1Spokes =  obj.spokeHalfEdges(p1);
-                    p3Spokes =  obj.spokeHalfEdges(p3);
-                
-                    p1MeanSpokeLength = mean(lengths(p1Spokes));
-                    p3MeanSpokeLength = mean(lengths(p3Spokes));
-                
-                    if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
-                        temp = he4;
-                        he4 = he1;
-                        he1 = temp;
-                    
-                        temp = p3;
-                        p3 = p1;
-                        p1 = temp;
-                    end
+%                     p1Spokes =  obj.spokeHalfEdges(p1);
+%                     p3Spokes =  obj.spokeHalfEdges(p3);
+%                 
+%                     p1MeanSpokeLength = mean(lengths(p1Spokes));
+%                     p3MeanSpokeLength = mean(lengths(p3Spokes));
+%                 
+%                     if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
+%                         temp = he4;
+%                         he4 = he1;
+%                         he1 = temp;
+%                     
+%                         temp = p3;
+%                         p3 = p1;
+%                         p1 = temp;
+%                     end
                     
                     % now p1 and p3 are finalized we need to find the two
                     % nodes that will have reduced spokes counts after the
                     % collapse. We'll come back to these at the end.
-                    reducedSpokeNodes = obj.ends(obj.next([he1;he4]));
+                    reducedSpokeVertices = obj.ends(obj.next([he1;he4]));
                     
                     % flag half edges of collapsed faces for removal
                     %------------------------------------------------------
@@ -1979,32 +1972,14 @@ classdef SurfaceMesh < handle
                     removedHalfEdges = [3*fa-2, 3*fa-1, 3*fa,...
                                         3*fb-2, 3*fb-1, 3*fb];
                 
-                    if any(halfEdgeFlags(removedHalfEdges))==1
+                    if any(halfEdgeFlags(removedHalfEdges)==1)
                         error('half edge already deleted')
                     end
                 
                     % if any vert points to a flagged half edge fix it
                     %------------------------------------------------------
-                    for j = 1:6
-                        iVertex = obj.ends(removedHalfEdges(j));
-                        if obj.vertexHalfEdges(iVertex) == removedHalfEdges(j)
-                            nexti = obj.next(removedHalfEdges(j));
-                            pairi = obj.pair(nexti);
-                            if any(removedHalfEdges == pairi)
-                                nexti = obj.next(pairi);
-                                pairi = obj.pair(nexti);
-                                if any(removedHalfEdges == pairi)
-                                    error('degenerate flap face: 2 faces w/ same vertices')
-                                end
-                            end
-                            obj.vertexHalfEdges(iVertex) = pairi;
-                        end
-                    end
+                    obj.correctVertexHalfEdgeRelations(removedHalfEdges);
                 
-                    % track removed entities
-                    vertexFlags(p1) = 1;
-                    halfEdgeFlags(removedHalfEdges) = 1;
-                    
                     % change vertices of relevant half edges
                     obj.replaceHalfEdgeVertex(p1, p3);
                     
@@ -2021,153 +1996,71 @@ classdef SurfaceMesh < handle
                         end
                     end
                     
-                    % fix pair connectivity
+                    % fix pair connectivity around collapse faces
                     obj.fixCollapsedFacePairs(he1);
 
-
-                    % update lengths of modified edges from collapse
-                    %------------------------------------------------------
-                    modifiedEdges = obj.spokeHalfEdges(p3);
-                    modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
-                    modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
-                    modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
-                    if isFeatureBased
-                        modifiedVertices = obj.collapseModifiedVertices(p3);
-                        angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
-                        angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
-                        modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +... 
-                                          angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
-                        modifiedLengths=modifiedLengths.*modifiedAngles;
-                    end
-                    lengths(modifiedEdges)=modifiedLengths;
-                    isModifiedHalfEdge(modifiedEdges) = 1;
-                    
-                    % update lengths of modified edges from flips
-                    %------------------------------------------------------
+                    % make sure things are delaunay
                     [modifiedEdges,modifiedVertices] = obj.edgeFlipModifiedRegion(p3);
-                    modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
-                    modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
-                    modifiedLengths = obj.halfEdgeLengths(modifiedEdges);
-                    if isFeatureBased
-                        angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
-                        modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +... 
-                                          angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
-                        modifiedLengths=modifiedLengths.*modifiedAngles;
-                    end
-                    lengths(modifiedEdges) = modifiedLengths;
-                    isModifiedHalfEdge(modifiedEdges) = 1;
-                    
-                    % track removed halfEdges
-                    isModifiedHalfEdge(removedHalfEdges) = 2;
-                    lengths(removedHalfEdges)=nan;
+
+                    % update our metric for collpase
+                    modifiedEdges = unique([modifiedEdges;obj.spokeHalfEdges(p3)]);
+                    modifiedVertices = unique([modifiedVertices;obj.collapseModifiedVertices(p3)]);
+                    modifiedMetric = obj.calculateSelectionMetric(modifiedEdges,modifiedVertices,isFeatureBased);
+                    selectionMetric(modifiedEdges) = modifiedMetric;
 
                     % check if we create any questionable cycles
-                    % if so, push them to the front of the line for
-                    % elmination
-                    for j=1:2
-                        pj = reducedSpokeNodes(j);
-                        numSpokes = obj.numSpokes(pj);
-                        if numSpokes == 3
-                            hej = obj.spokeHalfEdges(pj);
-                            lowValenceCandidates=[lowValenceCandidates;hej];
-                        elseif numSpokes == 2
-                            disp(pj)
-                            disp(obj.coordinates(pj,:))
-                            error("collapse produced a degenerate flap face")
-                        end
-                    end
+                    % if so, push them to the front of the line
+                    newLowValenceVertices = obj.updateLowValenceVertices(reducedSpokeVertices);
+                    lowValenceCandidates = [lowValenceCandidates,...
+                                            newLowValenceVertices];
+
+                    % track removed entities
+                    vertexFlags(p1) = 1;
+                    halfEdgeFlags(removedHalfEdges) = 1;
+                    isModifiedHalfEdge(modifiedEdges) = 1;
+                    isModifiedHalfEdge(removedHalfEdges) = 2;
+                    selectionMetric(removedHalfEdges)=nan;
                     
                     i = i+1;
                 end
                 
             end
             
-            % map old indices to new indices in the coarsened mesh
-            iter = 0;
-            for i = 1:obj.numHalfEdges
-                if halfEdgeFlags(i) == 0
-                    iter = iter+1;
-                    halfEdgeNewIndices(i) = iter;
-                end
-            end
-            
-            iter = 0;
-            for i = 1:obj.numVertices
-                if vertexFlags(i) == 0
-                    iter = iter+1;
-                    vertexNewIndices(i) = iter;
-                end
-            end
-            
-            % read our fixed flags
-            obj.isFixedHalfEdge = obj.isFixedHalfEdge(halfEdgeFlags==0);
-            obj.isFixedVertex = obj.isFixedVertex(vertexFlags==0);
-
-            % set relations to new indices
-            obj.ends = vertexNewIndices(obj.ends);
-            obj.pair = halfEdgeNewIndices(obj.pair);
-            obj.next = halfEdgeNewIndices(obj.next);
-            obj.vertexHalfEdges = halfEdgeNewIndices(obj.vertexHalfEdges);
-            
-            % remove the inactive elements
-            obj.ends = obj.ends(halfEdgeFlags==0);
-            obj.next = obj.next(halfEdgeFlags==0);
-            obj.pair = obj.pair(halfEdgeFlags==0);
-
-            obj.coordinates = obj.coordinates(vertexFlags==0,:);
-            obj.vertexHalfEdges = obj.vertexHalfEdges(vertexFlags==0,:);
-            
-            
-            obj.faces = [obj.ends(1:3:end),...
-                         obj.ends(2:3:end),...
-                         obj.ends(3:3:end)];
-            
-            % correct our counter variables
-            obj.numHalfEdges = obj.numHalfEdges - 6*numDeletedVertices;
-            obj.numEdges = obj.numEdges - 3*numDeletedVertices;
-            obj.numVertices = obj.numVertices - numDeletedVertices;
-            obj.numFaces = obj.numFaces - 2*numDeletedVertices;
-            obj.numNodes = obj.numVertices;
-            
-            % recalculate bulk properties
-            obj.degree=1;
-            obj.volume = obj.calculateVolume();
-            obj.centroid = obj.calculateCentroid();
-            obj.surfaceArea = obj.calculateSurfaceArea();
-            obj.resolution = obj.calculateResolution();
+            % clean things up
+            obj.cleanDeletedEntities(vertexFlags,halfEdgeFlags) 
+            obj.resetBulkProperties();
             obj.clearFields();
             
-            disp(['  final numFaces: ',num2str(obj.numFaces)])
-            disp('--------------------------------------------------')
-            disp(' ')
+            progressMeter.close();
         end
         function smooth(obj,N,method,projectPoints,additionalWeights)
         % mesh smoothing
         %------------------------------------------------------------------
         % Inputs:
-        %   N -------------- number of smoothing iterations
-        %   method --------- ('uniform','cotangent',or 'area')
-        %   projectPoints -- project back onto original mesh when done?
-        %   vertexWeights -- specify additional weight for vertices
+        %   N ------------------ number of smoothing iterations
+        %   method ------------- ('uniform','cotangent',or 'area')
+        %   projectPoints ------ project back onto original mesh when done?
+        %   additionalWeights -- specify additional weight for vertices
         %------------------------------------------------------------------
              
             % process our inputs
             if nargin == 2
-                method = "cotangent";
+                method = obj.smoothOptions.method;
             end
             if nargin >= 3
+                method = lower(method);
                 if strcmp(method,"cotan") || strcmp(method,"cot")
                     method = "cotangent";
                 end
                 if ~strcmp(method,"cotangent")  && ~strcmp(method,"uniform") && ~strcmp(method,"area")
-                    error('incorrect method specified "cotangent", "uniform" or "area"')
+                    error('incorrect method specified must be: "cotangent", "uniform" or "area"')
                 end
             end
             if nargin == 1 || nargin > 5
-                error('incorrect number of inputs: specific number of smoothing steps and optionally smoothing method')
+                error('incorrect number of inputs')
             end
             if nargin < 4
-                projectPoints=false;
+                projectPoints=obj.smoothOptions.reproject;
             end
             if nargin == 5 
                 if max(additionalWeights) > 1 || min(additionalWeights) < 0
@@ -2185,24 +2078,30 @@ classdef SurfaceMesh < handle
             % if its a fixed vertex don't let it move
             additionalWeights(obj.isFixedVertex==1) = 0;
             
+
             % smooth rectilinear
             if obj.degree == 1
+
+                progressMeter = progressbar('Smoothing Mesh              : ');
+
                 for j = 1:N
-                     
+                    progressMeter.update(100*j/N);
+
                     delta = zeros(obj.numVertices,3);
                     wsum = zeros(obj.numVertices,1);
-                    
-                    tmpCoords = obj.coordinates;
-                    
-                    % vertices defining faces
-                    p1 = obj.ends(1:3:end);
-                    p2 = obj.ends(2:3:end);
-                    p3 = obj.ends(3:3:end);
                     
                     % for area weighting
                     A1 = ones(obj.numFaces,1);
                     A2 = ones(obj.numFaces,1);
                     A3 = ones(obj.numFaces,1);
+
+                    tmpCoords = obj.coordinates;
+                    
+                    % vertex indices defining faces
+                    p1 = obj.ends(1:3:end);
+                    p2 = obj.ends(2:3:end);
+                    p3 = obj.ends(3:3:end);
+
                     if strcmp(method,'area')
                         pointAreas = obj.vertexAreaVectors();
                         pointAreas = sqrt(pointAreas(:,1).^2+...
@@ -2231,6 +2130,7 @@ classdef SurfaceMesh < handle
                         w1 = cot(cos(-dot(n3,n1,2)));
                         w2 = cot(cos(-dot(n2,n1,2)));
                         w3 = cot(cos(-dot(n3,n2,2)));
+
                     else % uniform weights
                         w1 = ones(obj.numFaces,1);
                         w2 = ones(obj.numFaces,1);
@@ -2257,7 +2157,9 @@ classdef SurfaceMesh < handle
                     tmpCoords = tmpCoords + 1./wsum.*delta.*additionalWeights;
                     
                 end
-                
+
+                progressMeter.close();
+
                 % project back onto original mesh if need be
                 if projectPoints
                     oldCoords = obj.coordinates;
@@ -2270,16 +2172,12 @@ classdef SurfaceMesh < handle
                 obj.coordinates = tmpCoords;
                 
                 % recalc bulk stuff
-                obj.volume = obj.calculateVolume();
-                obj.centroid = obj.calculateCentroid();
-                obj.surfaceArea = obj.calculateSurfaceArea();
-                obj.resolution = obj.calculateResolution();
+                obj.resetBulkProperties()
                 obj.clearFields();
             else
-                error("lapacian smoothing is not set up for degree>1 meshes, you'll need to flatten it and recurve")
+                error("Smoothing is not set up for degree>1 meshes, you'll need to flatten it")
             end
-            
-        
+
         end
         function refine(obj,refineFaces)
         % converts each tri to 4. Allows subset of faces to be refined.
@@ -2573,10 +2471,11 @@ classdef SurfaceMesh < handle
         %   projectPoints - new post-projection coordinates
         %------------------------------------------------------------------
             
+            numProjPoints = size(points,1);
             numCandidates = 12;
             maxProjectionDistance = min(max(obj.coordinates,[],1) - ...
                                         min(obj.coordinates,[],1))/3;
-            projectedPoints = zeros(size(points,1),3);
+            projectedPoints = zeros(numProjPoints,3);
             
             % if no projection direction specified use radial
             if nargin==2
@@ -2614,12 +2513,14 @@ classdef SurfaceMesh < handle
                 octantFaceIndices{i}=indices(nodeOctants==i);
                 octantFaceCentroids{i}=faceCentroids(octantFaceIndices{i},:); 
             end
-             
-
+            progressMeter = progressbar('Projecting Points           : ');
+            
             % Project
             %--------------------------------------------------------------
-            for i=1:size(points,1)
-                %disp([i,size(points,1)]
+            for i=1:numProjPoints
+
+                progressMeter.update(100*i/numProjPoints);
+
                 threshold = 1e-4;
                 ni = pointNormals(i,:);    
                 coordi = points(i,:); 
@@ -2699,7 +2600,7 @@ classdef SurfaceMesh < handle
                             % expand search if we fail a lot
                             %----------------------------------------------
                             if (numCandidatesi > 4.5 * numCandidates) && allFaces==false
-                                disp('failed ... seaching all...')
+                                %disp('failed ... seaching all...')
                                 allFaces=true;
                                 numCandidatesi = numCandidates;
                                 dist = faceCentroids-coordi;             
@@ -2726,7 +2627,7 @@ classdef SurfaceMesh < handle
                     
                 end
             end
-                
+            progressMeter.close();    
         end
         function projectedPoints = projectRobust(obj, points, pointNormals)
         % projects set of near-surface points onto the mesh.
@@ -2745,9 +2646,10 @@ classdef SurfaceMesh < handle
         % Outputs:
         %   projectPoints - new post-projection coordinates
         %------------------------------------------------------------------
-            obj.resolution
+            
             threshold = 1e-4;
-            projectedPoints = zeros(size(points,1),3);
+            numProjPoints = size(points,1);
+            projectedPoints = zeros(numProjPoints,3);
             
             % if no projection direction specified use radial
             if nargin==2
@@ -2767,9 +2669,14 @@ classdef SurfaceMesh < handle
             faceCoordinates2 = obj.coordinates(obj.faces(:,2),:);
             faceCoordinates3 = obj.coordinates(obj.faces(:,3),:);
 
+             progressMeter = progressbar('Projecting Points           : ');
+
             % Project
             %--------------------------------------------------------------
-            for i=1:size(points,1)
+            for i=1:numProjPoints
+
+                progressMeter.update(100*i/numProjPoints);
+
                 ni = pointNormals(i,:);   
                 coordi = points(i,:);
                         
@@ -2823,7 +2730,7 @@ classdef SurfaceMesh < handle
                     
                 end
             end
-                
+            progressMeter.close();  
         end
         
         function  isValid(obj)
@@ -3470,6 +3377,388 @@ classdef SurfaceMesh < handle
         end
     end
     
+    methods(Access=private)
+        function validity = isValidCollapse(obj,he1)
+        % add check on spoke count for vertices P2 and P4
+        %------------------------------------------------------------------
+        %             o p2             | The collapse could still mess
+        %            / ^               | things up, this is just a quick
+        %           /   \              | and easy check to help prevent
+        %      he3 /     \ he2         | that from happening in most cases
+        %         /       \            | 
+        %        v         \           | 
+        %    p3 o----he1--->o p1       | 
+        %        \<--he4---^           | 
+        %         \       /            |
+        %      he5 \     / he6         | 
+        %           \   /              |
+        %            v /               |
+        %             o p4             | 
+        %------------------------------------------------------------------
+        % Inputs:
+        %   he1 ------ collapse half edge pointing to collapse vertex
+        %------------------------------------------------------------------
+        % Outputs:
+        %   validity - True if you "can't see it from my house"
+        %------------------------------------------------------------------
+       
+            validity = false;
+            
+            he2 = obj.next(he1);
+            he4 = obj.pair(he1);
+            he5 = obj.next(he4);
+            
+            %p1 = obj.ends(he1);
+            p2 = obj.ends(he2);
+            %p3 = obj.ends(he4);
+            p4 = obj.ends(he5);
+            
+            p2NumSpokes = obj.numSpokes(p2);
+            p4NumSpokes = obj.numSpokes(p4);
+            
+            minSpokeCount = min(p2NumSpokes,p4NumSpokes);
+            
+            if minSpokeCount > 3
+                validity = true;
+            end
+        end
+        function [modifiedEdges,modifiedVertices] = edgeFlipModifiedRegion(obj,iVertex)
+        % edge flip algo for ring around collapsed vertex
+        %------------------------------------------------------------------
+        %             o             
+        %              ^\            
+        %               \\           
+        %           nexti\\ pairi     
+        %                 \\          
+        %                  \v          
+        %       o----hei--->o -----------> o   
+        %         <--------^/  <----------        
+        %                 //          
+        %                //      
+        %               //             
+        %              /v             
+        %             o               
+        %------------------------------------------------------------------
+        %             o p2             |             o p2             
+        %            / ^               |            / ^               
+        %           /   \              |           / ^ \             
+        %      he3 /     \ he2         |      he3 /  || \ he4         
+        %         /       \            |         /   ||  \            
+        %        v         \                    v    ||   \           
+        %    p3 o----he1--->o p1      ==>   p3 o  he2||he5 o p1       
+        %        \<--he4---^                    \    ||   ^  
+        %         \       /            |         \   ||  /            
+        %      he5 \     / he6         |      he1 \  || / he6          
+        %           \   /              |           \  v/               
+        %            v /               |            v /                           
+        %             o p4             |             o p4             
+        %------------------------------------------------------------------
+
+        
+            modifiedEdges = [];
+            modifiedVertices = [];
+            flipStack = [];
+            
+            % add in all incoming spokes and outer ring
+            hei = obj.vertexHalfEdges(iVertex);
+            pairi = hei;
+            count = 0;
+            while pairi ~= hei || count == 0
+                count = count + 1;
+                nexti = obj.next(pairi);
+                nextnexti = obj.next(nexti);
+                flipStack = [flipStack,pairi,nextnexti];
+                pairi = obj.pair(nexti);
+            end
+            
+            % test them all for edge flip and track modified edges
+            stackLength = length(flipStack);
+            while stackLength>=1
+                he1 = flipStack(stackLength);
+                flip = obj.flipCriterion(he1);
+                if flip
+                    he2 = obj.next(he1);
+                    he3 = obj.next(he2);
+                    he4 = obj.pair(he1);
+                    he5 = obj.next(he4);
+                    he6 = obj.next(he5);
+                    
+                    modifiedEdges=[modifiedEdges;he1;he2;he4;he5];
+                    
+                    p1 = obj.ends(he1);
+                    p2 = obj.ends(he2);
+                    p3 = obj.ends(he4);
+                    p4 = obj.ends(he5);
+                    
+                    modifiedVertices=[modifiedVertices;p1;p2;p3;p4];
+                    
+                    obj.flipEdge(he1);
+                    
+                    flipStack=[flipStack(1:stackLength),he4,he3,he6];
+                    stackLength=stackLength+3;
+                else
+                    stackLength=stackLength-1;
+                end
+            end
+            modifiedEdges=unique(modifiedEdges);
+            modifiedVertices=unique(modifiedVertices);
+        end  
+        function replaceHalfEdgeVertex(obj, iVertexOld , iVertexNew)
+        % replaces vertex ids in half edge data structure with a new one
+        %------------------------------------------------------------------
+        % walks the vertex loop for the oldIndex vertex replacing it with
+        % the new vertex for halfEdges that pointed to oldIndex vertex.
+        %------------------------------------------------------------------
+        % Inputs:
+        %   iVertexOld -- id of vertex being replaced
+        %   iVertexNew -- id of vertex being sub-ed in
+        %------------------------------------------------------------------
+            
+            % original code
+            if length(iVertexOld)==1
+                startingEdge = obj.vertexHalfEdges(iVertexOld);
+                obj.ends(startingEdge) = iVertexNew;
+            
+                nexti = obj.next(startingEdge);
+                pairi = obj.pair(nexti);
+            
+                while  pairi ~= startingEdge
+                    obj.ends(pairi) = iVertexNew;
+                    nexti = obj.next(pairi);
+                    pairi = obj.pair(nexti);
+                end
+              
+            % for big data we want to vectorize   
+            else
+                startingEdge = obj.vertexHalfEdges(iVertexOld);
+                obj.ends(startingEdge) = iVertexNew;
+                
+                nexti = obj.next(startingEdge);    
+                pairi = obj.pair(nexti);
+   
+                i=1;
+                while  any(pairi ~= startingEdge)
+                    keepLoops = pairi ~= startingEdge;  
+                    %disp(['Spoke: ',num2str(i)])
+                    %disp(['  numEdgeLoops: ',num2str(length(keepLoops))])
+                    %max(iVertexNew)
+                    pairi = pairi(keepLoops); 
+                    startingEdge = startingEdge(keepLoops); 
+                    iVertexNew = iVertexNew(keepLoops);
+                    %ids = ids(keepLoops);
+                    
+                    obj.ends(pairi) = iVertexNew;
+                                      
+                    nexti = obj.next(pairi);
+                    pairi = obj.pair(nexti);
+                    i=i+1;
+                end   
+            
+            end
+                
+            
+        end
+        function fixCollapsedFacePairs(obj, he1)
+        % fixing the pairing of half edges associated w/ a collapsed face
+        %------------------------------------------------------------------
+        % The half edges of adjacent faces to the collapsed faces will now
+        % be paired with each other to restore the appropriate connectivity
+        %------------------------------------------------------------------
+        %             o p2             | 
+        %            / ^               | 
+        %           /   \              |
+        %      he3 /     \ he2         |   
+        %         /       \            | 
+        %        v         \           | 
+        %    p3 o----he1--->o p1       | 
+        %        \<--he4---^           |
+        %         \       /            |
+        %      he5 \     / he6         |
+        %           \   /              | 
+        %            v /               |
+        %             o p4             |  
+        %------------------------------------------------------------------
+        % Inputs:
+        %   i-- index of half edge being collapsed
+        %------------------------------------------------------------------
+            
+            
+            he2 = obj.next(he1);
+            he3 = obj.next(he2);
+            
+            % half edges of adjacent faces
+            he2pair = obj.pair(he2);
+            he3pair = obj.pair(he3);
+            
+            % set the adjacent pairs 
+            obj.pair(he2pair) = he3pair;
+            obj.pair(he3pair) = he2pair;
+            
+            % repeat for pair
+            he4 = obj.pair(he1);
+            
+            he5 = obj.next(he4);
+            he6 = obj.next(he5);
+            
+            % half edges of adjacent faces
+            he5pair = obj.pair(he5);
+            he6pair = obj.pair(he6);
+            
+            % set the adjacent pairs 
+            obj.pair(he5pair) = he6pair;
+            obj.pair(he6pair) = he5pair;
+                
+        end
+        function correctVertexHalfEdgeRelations(obj,removedHalfEdges) 
+        % vertices pointing to specified he's switched to next he
+        %------------------------------------------------------------------
+        % loops through a list of half edge indices. For each specified
+        % index tests if the half edge's vertex points to the specified
+        % half edge. If so, the vertex is switched to point to another
+        % one of its spoke half edges. This method is used in the edge
+        % collapse algorithm to fix mesh connectivity after half edge
+        % removal.
+        %------------------------------------------------------------------
+        % Inputs:
+        %   removedHalfEdges -- list of he indices
+        %------------------------------------------------------------------
+            
+            for j = 1:length(removedHalfEdges)
+                iVertex = obj.ends(removedHalfEdges(j));
+
+                % take one
+                if obj.vertexHalfEdges(iVertex) == removedHalfEdges(j)
+                    nexti = obj.next(removedHalfEdges(j));
+                    pairi = obj.pair(nexti);
+
+                    % take two
+                    if any(removedHalfEdges == pairi)
+                        nexti = obj.next(pairi);
+                        pairi = obj.pair(nexti);
+                        
+                        % it still no good we have a flap face
+                        if any(removedHalfEdges == pairi)
+                            error('degenerate flap face: 2 faces w/ same vertices')
+                        end
+                    end
+
+                    obj.vertexHalfEdges(iVertex) = pairi;
+                end
+            end
+        end
+        function selectionMetric = initializeSelectionMetric(obj,isFeatureBased)
+        % get our selection metric
+        %------------------------------------------------------------------
+            modifiedEdges = 1:obj.numHalfEdges;
+            modifiedVertices = 1:obj.numVertices;
+            selectionMetric = obj.calculateSelectionMetric(modifiedEdges,modifiedVertices,isFeatureBased);
+            
+        end
+        function modifiedMetric = calculateSelectionMetric(obj,modifiedEdges,modifiedVertices,isFeatureBased)
+        % update selection metric post collapse
+        %------------------------------------------------------------------
+
+            % update lengths of modified edges from collapse
+            %------------------------------------------------------
+            modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
+            modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
+            modifiedMetric = obj.halfEdgeLengths(modifiedEdges);
+
+            if isFeatureBased
+                angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
+                angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
+                modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +...
+                    angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
+                modifiedMetric=modifiedMetric.*modifiedAngles;
+            end
+
+        end
+        function newLowValenceVertices = updateLowValenceVertices(obj,vertexIndices)
+        % adds vertices to lowValenceCandidates if 3 spokes or fewer
+        %------------------------------------------------------------------
+        % Inputs:
+        %   vertexIndicies -- vertex indices to test for low spoke count
+        %------------------------------------------------------------------
+        % Outputs:
+        %   newLowValencyVertices -- indices of vertices with few spokes
+        %------------------------------------------------------------------
+            newLowValenceVertices = [];
+            for j=1:length(vertexIndices)
+                pj = vertexIndices(j);
+                numSpokes = obj.numSpokes(pj);
+                if numSpokes == 3
+                    hej = obj.spokeHalfEdges(pj);
+                    newLowValenceVertices=[newLowValenceVertices;hej];
+                elseif numSpokes == 2
+                    disp(pj)
+                    disp(obj.coordinates(pj,:))
+                    error("collapse produced a degenerate flap face")
+                end
+            end
+        end
+        function cleanDeletedEntities(obj,vertexFlags,halfEdgeFlags)
+        % cleans after edge collapse algorithm
+        %------------------------------------------------------------------
+        % Inputs:
+        %   vertexFlags ---- vertices removed from mesh
+        %   halfEdgeFlags -- half edges removed from mesh
+        %------------------------------------------------------------------
+
+            % map old indices to new 
+            vertexNewIndices   = zeros(obj.numVertices,1);
+            halfEdgeNewIndices = zeros(obj.numHalfEdges,1);
+
+            iter = 0;
+            for i = 1:obj.numHalfEdges
+                if halfEdgeFlags(i) == 0
+                    iter = iter+1;
+                    halfEdgeNewIndices(i) = iter;
+                end
+            end
+            
+            iter = 0;
+            numDeletedVertices=0;
+            for i = 1:obj.numVertices
+                if vertexFlags(i) == 0
+                    iter = iter+1;
+                    vertexNewIndices(i) = iter;
+                else
+                    numDeletedVertices=numDeletedVertices+1;
+                end
+            end
+            
+            % read our fixed flags
+            obj.isFixedHalfEdge = obj.isFixedHalfEdge(halfEdgeFlags==0);
+            obj.isFixedVertex = obj.isFixedVertex(vertexFlags==0);
+
+            % set relations to new indices
+            obj.ends = vertexNewIndices(obj.ends);
+            obj.pair = halfEdgeNewIndices(obj.pair);
+            obj.next = halfEdgeNewIndices(obj.next);
+            obj.vertexHalfEdges = halfEdgeNewIndices(obj.vertexHalfEdges);
+            
+            % remove the inactive elements
+            obj.ends = obj.ends(halfEdgeFlags==0);
+            obj.next = obj.next(halfEdgeFlags==0);
+            obj.pair = obj.pair(halfEdgeFlags==0);
+
+            obj.coordinates = obj.coordinates(vertexFlags==0,:);
+            obj.vertexHalfEdges = obj.vertexHalfEdges(vertexFlags==0,:);
+            
+            
+            obj.faces = [obj.ends(1:3:end),...
+                         obj.ends(2:3:end),...
+                         obj.ends(3:3:end)];
+            
+            % correct our counter variables
+            obj.numHalfEdges = obj.numHalfEdges - 6*numDeletedVertices;
+            obj.numEdges = obj.numEdges - 3*numDeletedVertices;
+            obj.numVertices = obj.numVertices - numDeletedVertices;
+            obj.numFaces = obj.numFaces - 2*numDeletedVertices;
+            obj.numNodes = obj.numVertices;
+        end
+    end
+
     methods(Access=public)
 
         function [halfEdges,halfEdgeAngles] = outerRingAngles(obj,iVertex)
@@ -3636,240 +3925,6 @@ classdef SurfaceMesh < handle
             vertices=vertices(1:i);
             
         end
-        function replaceHalfEdgeVertex(obj, iVertexOld , iVertexNew)
-        % replaces vertex ids in half edge data structure with a new one
-        %------------------------------------------------------------------
-        % walks the vertex loop for the oldIndex vertex replacing it with
-        % the new vertex for halfEdges that pointed to oldIndex vertex.
-        %------------------------------------------------------------------
-        % Inputs:
-        %   iVertexOld -- id of vertex being replaced
-        %   iVertexNew -- id of vertex being sub-ed in
-        %------------------------------------------------------------------
-            
-            % original code
-            if length(iVertexOld)==1
-                startingEdge = obj.vertexHalfEdges(iVertexOld);
-                obj.ends(startingEdge) = iVertexNew;
-            
-                nexti = obj.next(startingEdge);
-                pairi = obj.pair(nexti);
-            
-                while  pairi ~= startingEdge
-                    obj.ends(pairi) = iVertexNew;
-                    nexti = obj.next(pairi);
-                    pairi = obj.pair(nexti);
-                end
-              
-            % for big data we want to vectorize   
-            else
-                startingEdge = obj.vertexHalfEdges(iVertexOld);
-                obj.ends(startingEdge) = iVertexNew;
-                
-                nexti = obj.next(startingEdge);    
-                pairi = obj.pair(nexti);
-   
-                i=1;
-                while  any(pairi ~= startingEdge)
-                    keepLoops = pairi ~= startingEdge;  
-                    %disp(['Spoke: ',num2str(i)])
-                    %disp(['  numEdgeLoops: ',num2str(length(keepLoops))])
-                    %max(iVertexNew)
-                    pairi = pairi(keepLoops); 
-                    startingEdge = startingEdge(keepLoops); 
-                    iVertexNew = iVertexNew(keepLoops);
-                    %ids = ids(keepLoops);
-                    
-                    obj.ends(pairi) = iVertexNew;
-                                      
-                    nexti = obj.next(pairi);
-                    pairi = obj.pair(nexti);
-                    i=i+1;
-                end   
-            
-            end
-                
-            
-        end
-        function fixCollapsedFacePairs(obj, he1)
-        % fixing the pairing of half edges associated w/ a collapsed face
-        %------------------------------------------------------------------
-        % The half edges of adjacent faces to the collapsed faces will now
-        % be paired with each other to restore the appropriate connectivity
-        %------------------------------------------------------------------
-        %             o p2             | 
-        %            / ^               | 
-        %           /   \              |
-        %      he3 /     \ he2         |   
-        %         /       \            | 
-        %        v         \           | 
-        %    p3 o----he1--->o p1       | 
-        %        \<--he4---^           |
-        %         \       /            |
-        %      he5 \     / he6         |
-        %           \   /              | 
-        %            v /               |
-        %             o p4             |  
-        %------------------------------------------------------------------
-        % Inputs:
-        %   i-- index of half edge being collapsed
-        %------------------------------------------------------------------
-            
-            
-            he2 = obj.next(he1);
-            he3 = obj.next(he2);
-            
-            % half edges of adjacent faces
-            he2pair = obj.pair(he2);
-            he3pair = obj.pair(he3);
-            
-            % set the adjacent pairs 
-            obj.pair(he2pair) = he3pair;
-            obj.pair(he3pair) = he2pair;
-            
-            % repeat for pair
-            he4 = obj.pair(he1);
-            
-            he5 = obj.next(he4);
-            he6 = obj.next(he5);
-            
-            % half edges of adjacent faces
-            he5pair = obj.pair(he5);
-            he6pair = obj.pair(he6);
-            
-            % set the adjacent pairs 
-            obj.pair(he5pair) = he6pair;
-            obj.pair(he6pair) = he5pair;
-                
-        end
-        
-        function validity = isValidCollapse(obj,he1)
-        % add check on spoke count for vertices P2 and P4
-        %------------------------------------------------------------------
-        %             o p2             | The collapse could still mess
-        %            / ^               | things up, this is just a quick
-        %           /   \              | and easy check to help prevent
-        %      he3 /     \ he2         | that from happening in most cases
-        %         /       \            | 
-        %        v         \           | 
-        %    p3 o----he1--->o p1       | 
-        %        \<--he4---^           | 
-        %         \       /            |
-        %      he5 \     / he6         | 
-        %           \   /              |
-        %            v /               |
-        %             o p4             | 
-        %------------------------------------------------------------------
-        % Inputs:
-        %   he1 ------ collapse half edge pointing to collapse vertex
-        %------------------------------------------------------------------
-        % Outputs:
-        %   validity - True if you "can't see it from my house"
-        %------------------------------------------------------------------
-       
-            validity = false;
-            
-            he2 = obj.next(he1);
-            he4 = obj.pair(he1);
-            he5 = obj.next(he4);
-            
-            p1 = obj.ends(he1);
-            p2 = obj.ends(he2);
-            p3 = obj.ends(he4);
-            p4 = obj.ends(he5);
-            
-            p2NumSpokes = obj.numSpokes(p2);
-            p4NumSpokes = obj.numSpokes(p4);
-            
-            minSpokeCount = min(p2NumSpokes,p4NumSpokes);
-            
-            if minSpokeCount > 3
-                validity = true;
-            end
-        end
-        
-        function [modifiedEdges,modifiedVertices] = edgeFlipModifiedRegion(obj,iVertex)
-        % edge flip algo for ring around collapsed vertex
-        %------------------------------------------------------------------
-        %             o             
-        %              ^\            
-        %               \\           
-        %           nexti\\ pairi     
-        %                 \\          
-        %                  \v          
-        %       o----hei--->o -----------> o   
-        %         <--------^/  <----------        
-        %                 //          
-        %                //      
-        %               //             
-        %              /v             
-        %             o               
-        %------------------------------------------------------------------
-        %             o p2             |             o p2             
-        %            / ^               |            / ^               
-        %           /   \              |           / ^ \             
-        %      he3 /     \ he2         |      he3 /  || \ he4         
-        %         /       \            |         /   ||  \            
-        %        v         \                    v    ||   \           
-        %    p3 o----he1--->o p1      ==>   p3 o  he2||he5 o p1       
-        %        \<--he4---^                    \    ||   ^  
-        %         \       /            |         \   ||  /            
-        %      he5 \     / he6         |      he1 \  || / he6          
-        %           \   /              |           \  v/               
-        %            v /               |            v /                           
-        %             o p4             |             o p4             
-        %------------------------------------------------------------------
-
-        
-            modifiedEdges = [];
-            modifiedVertices = [];
-            flipStack = [];
-            
-            % add in all incoming spokes and outer ring
-            hei = obj.vertexHalfEdges(iVertex);
-            pairi = hei;
-            count = 0;
-            while pairi ~= hei || count == 0
-                count = count + 1;
-                nexti = obj.next(pairi);
-                nextnexti = obj.next(nexti);
-                flipStack = [flipStack,pairi,nextnexti];
-                pairi = obj.pair(nexti);
-            end
-            
-            % test them all for edge flip and track modified edges
-            stackLength = length(flipStack);
-            while stackLength>=1
-                he1 = flipStack(stackLength);
-                flip = obj.flipCriterion(he1);
-                if flip
-                    he2 = obj.next(he1);
-                    he3 = obj.next(he2);
-                    he4 = obj.pair(he1);
-                    he5 = obj.next(he4);
-                    he6 = obj.next(he5);
-                    
-                    modifiedEdges=[modifiedEdges,...
-                        he1,he2,he4,he5];
-                    
-                    p1 = obj.ends(he1);
-                    p2 = obj.ends(he2);
-                    p3 = obj.ends(he4);
-                    p4 = obj.ends(he5);
-                    
-                    modifiedVertices=[modifiedVertices,p1,p2,p3,p4];
-                    
-                    obj.flipEdge(he1);
-                    
-                    flipStack=[flipStack(1:stackLength),he4,he3,he6];
-                    stackLength=stackLength+3;
-                else
-                    stackLength=stackLength-1;
-                end
-            end
-            modifiedEdges=unique(modifiedEdges);
-            modifiedVertices=unique(modifiedVertices);
-        end  
         function flip = flipCriterion(obj,he1)
         % returns true if min included angle is increased by edge flipping
         %------------------------------------------------------------------

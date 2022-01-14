@@ -23,6 +23,9 @@ classdef VolumeMesh < handle
 %       n ----- unit normal
 %--------------------------------------------------------------------------
     
+% need set/get and delete methods for the surface mesh for hasSurfaceMesh
+% safety
+
     properties (GetAccess=public)
         coordinates         % coordinates of nodes
         cells               % cells (node indices)
@@ -54,22 +57,22 @@ classdef VolumeMesh < handle
         function obj = VolumeMesh(mesh)
         % constructor to set things up from surface or vol mesh
         %------------------------------------------------------------------
+            
+            obj.numNodeFields = 0;
+            obj.numCellFields = 0;
+            obj.numCells = 0;
+            obj.numVertices = 0;
+            obj.numNodes = 0;
+            obj.numBoundaryVertices = 0;
+            obj.numBoundaryNodes = 0;
+
+            obj.isCurved=false;
+            obj.degree = 1;
+
             if nargin == 1
                 if isa(mesh,'SurfaceMesh')
                     obj.surfaceMesh=mesh;
                     obj.hasSurfaceMesh=true;
-
-                    obj.numNodeFields = 0;
-                    obj.numCellFields = 0;
-                    obj.numCells = 0;
-                    obj.numVertices = 0;
-                    obj.numNodes = 0;
-                    obj.numBoundaryVertices = 0;
-                    obj.numBoundaryNodes = 0;
-
-                    obj.isCurved=false;
-                    obj.degree = 1;
-
                 elseif isa(mesh,'VolumeMesh')
                     obj.copy(mesh);
                 end
@@ -116,7 +119,7 @@ classdef VolumeMesh < handle
 
             obj.hasSurfaceMesh=false;
             obj.isCurved=false;
-            obj.degree=1
+            obj.degree=1;
             obj.volume=0;
             obj.surfaceArea=0;
             obj.centroid=0;
@@ -140,26 +143,32 @@ classdef VolumeMesh < handle
         %   clipZone ------------- 'internal' or 'external'
         %------------------------------------------------------------------
             if nargin == 3
-               clipZone = lower(clipZone)
+               clipZone = lower(clipZone);
                assert (strcmp(clipZone,'internal') || strcmp(clipZone,'external'),"incorrect clipzone must be 'internal' or 'external'")
             elseif nargin == 2
                 clipZone = 'None';
             else
                 error('incorrect number of inputs')
             end
-
-
-            obj.coordinates = [obj.surfaceMesh.coordinates;internalCoordinates];
+            
+            obj.coordinates = internalCoordinates;
+            if obj.hasSurfaceMesh
+                obj.coordinates = [obj.surfaceMesh.coordinates;obj.coordinates];
+            end
             obj.numVertices = size(obj.coordinates,1);
             obj.numNodes = size(obj.coordinates,1);
+
             obj.delaunayTriangulation();
             if strcmp(clipZone,'internal')
                 obj.clipExternalCells();
             elseif strcmp(clipZone,'external')
                 obj.clipInternalCells();
             end
+
             obj.isBoundaryNode = zeros(obj.numNodes,1);
-            obj.isBoundaryNode(1:obj.surfaceMesh.numVertices) = 1;
+            if obj.hasSurfaceMesh
+                obj.isBoundaryNode(1:obj.surfaceMesh.numVertices) = 1;
+            end
             obj.numBoundaryVertices = sum(obj.isBoundaryNode);
             obj.numBoundaryNodes = obj.numBoundaryVertices;
 

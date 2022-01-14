@@ -8,7 +8,6 @@
 % worse.
 %--------------------------------------------------------------------------
 clear all; close all; clc;
-addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
 
 % standard gravitational parameter
 Mu=1;
@@ -25,10 +24,11 @@ surfaceMeshName = 'Eros_46906.obj';
 %surfaceMeshName = 'Itokawa_50000.obj';
 
 % Set our meshes
-smOriginal = SurfaceMesh(surfaceMeshName);
-smFeature  = SurfaceMesh(smOriginal);
-smUniform  = SurfaceMesh(smOriginal);
-smUniform.coarsenOptions.method = 'uniform';
+smOriginal = SurfaceMesh(surfaceMeshName);     % construct from obj file
+smFeature  = SurfaceMesh(smOriginal);          % copy construct 
+smFeature.coarsenOptions.method = 'feature';   % set default method
+smUniform  = SurfaceMesh(smOriginal);          % copy construct 
+smUniform.coarsenOptions.method = 'uniform';   % set default method
 
 % point sets to assess error 
 ptsSurface = smOriginal.coordinates(randi(smOriginal.numVertices,100,1));
@@ -39,7 +39,7 @@ ptsBrillouinSphere = offsetMesh.coordinates;
 % loop through and deterine accuracy
 i=1;
 numFaces = round(smOriginal.numFaces*1/2); % start at 1/2 the original res
-while numFaces(end) > 10000
+while numFaces(end) > 5000
     
     % coarsen
     numFaces(i) = numFaces(end) - 2000;
@@ -50,11 +50,12 @@ while numFaces(end) > 10000
     smFeatureP2 = SurfaceMesh(smFeature);
     smFeatureP2.setDegree(2)
     smFeatureP2.curve(smOriginal);
+
     smUniformP2 = SurfaceMesh(smUniform);
     smUniformP2.setDegree(2)
     smUniformP2.curve(smOriginal);
 
-    % center the meshes if requested
+    % center the meshes on (0,0,0) if requested
     if isCentered
         smOriginal.center();
         smFeature.center();
@@ -111,7 +112,8 @@ set(gcf,'Color',[1,1,1])
 xlabel('number of faces','Interpreter','latex')
 ylabel('volume error','Interpreter','latex')
 legend('feature-p1','uniform-p1','feature-p2','uniform-p2')
-figure(4)
+
+figure(2)
 hold on
 for i = 1:length(sm)
     plot(numFaces,comError(:,i),markers(i),'MarkerFaceColor',mfc(i))
@@ -120,7 +122,8 @@ set(gcf,'Color',[1,1,1])
 xlabel('number of faces','Interpreter','latex')
 ylabel('com error(m)','Interpreter','latex')
 legend('feature-p1','uniform-p1','feature-p2','uniform-p2')
-figure(2)
+
+figure(3)
 hold on
 for i = 1:size(accSurfaceError,2)
     plot(numFaces,accSurfaceError(:,i),markers(i),'MarkerFaceColor',mfc(i))
@@ -130,7 +133,7 @@ xlabel('number of faces','Interpreter','latex')
 ylabel('acceleration error %','Interpreter','latex')
 legend('Original','Analytic-feature','Analytic-uniform','ApproxP1-feature','ApproxP1-uniform','ApproxP2-feature','ApproxP2-uniform')
 
-figure(3)
+figure(4)
 hold on
 for i = 1:size(accSurfaceError,2)
     plot(numFaces,accBrillouinError(:,i),markers(i),'MarkerFaceColor',mfc(i))

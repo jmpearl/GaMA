@@ -1,8 +1,8 @@
 close all; clear all; clc;
 
-meshFile = 'Eros_46906.obj';           % define surface mesh file
-mesh = SurfaceMesh(meshFile);          % create tri surface mesh
-meshCoarse = mesh.coarsen(2000);       % coursen to 2000 faces
+meshFile = 'Eros_46906.obj';      % define surface mesh file
+mesh = SurfaceMesh(meshFile);     % create tri surface mesh
+mesh.coarsen(2000);               % coursen to 2000 faces
 
 % Example 1 : default
 %--------------------------------------------------------------------------

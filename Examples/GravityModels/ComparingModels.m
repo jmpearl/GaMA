@@ -15,7 +15,7 @@ Omega = bodyProperties.rotationRate;   %
 % some model parameters
 meshfile = 'Eros_7624.obj';    % mesh file to load 
 mesh = SurfaceMesh(meshfile);  % create the surface mesh object
-mesh = mesh.coarsen(3000);     % coarsen it to 3k faces
+mesh.coarsen(3000);            % coarsen it to 3k faces
 N = 6;                         % Order of SH expansion
 numMascons = 4000;             % number of mascons 
 

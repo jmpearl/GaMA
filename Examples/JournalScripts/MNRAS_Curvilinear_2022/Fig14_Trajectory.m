@@ -1,8 +1,15 @@
 %==========================================================================
-% Recreates Figure 14 (a) (b) (c) of
+% Script used for Figure 14 (a) (b) (c) of
 % Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
 % Model for Comets and Asteroids using Curvilinear Surface Definitions"
 % MNRAS, 2022 (submitted).
+%
+% ** Note GaMA is under development small variations from published 
+% ** results may occur.
+%
+% Integrates trajectories around Eros for 1000 periods using different 
+% gravity models. Position and energy error is assessed relative to the 
+% polyhedral model on a fine, 46906-facet, mesh.
 %==========================================================================
 clear all; close all; clc;
 

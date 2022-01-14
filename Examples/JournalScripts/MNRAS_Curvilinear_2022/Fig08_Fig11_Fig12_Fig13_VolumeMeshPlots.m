@@ -1,3 +1,16 @@
+%==========================================================================
+% Script used to create Figure 8, 11, 12, 13
+% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
+% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% MNRAS, 2022 (submitted).
+% 
+% ** Note GaMA is under development small variations from published 
+% ** results may occur.
+%
+% writes a volume mesh vtk file with acceleration, laplacian and model
+% error information for asteroid Eros.
+%==========================================================================
+
 clear all; close all; clc
 
 G = 6.67e-11; 
@@ -10,6 +23,7 @@ Omega = bodyProperties.rotationRate;   %
 numIters = 4;
 
 % set up meshes
+%--------------------------------------------------------------------------
 mesh = SurfaceMesh(meshfile);              % create the surface mesh object
 meshCoarse = SurfaceMesh(mesh);            % copy construct
 meshCoarse.coarsen(8000);                  % create coarsened version
@@ -28,8 +42,10 @@ quadratureModelP2   = ApproximatePolyhedralModel(meshCoarseP2,Mu);
 analyticModelTruth  = AnalyticPolyhedralModel(mesh,Mu);
 analyticModelCoarse = AnalyticPolyhedralModel(meshCoarse,Mu);
 
-% create volume mesh around body. We're manually creating this for now
+% create volume mesh around body. We're manually creating this for now so
+% that we can track the altitude of each vertex
 %--------------------------------------------------------------------------
+
 % offseting outward
 volumePoints = [mesh.coordinates];
 sm2 = SurfaceMesh(mesh);
@@ -55,12 +71,12 @@ for i = 1:numIters
     volumePoints = [volumePoints;sm3.coordinates];
     newVertexCount = newVertexCount-1000;
 end
+
+volumeMesh = VolumeMesh();                          % construct w/out surface mesh
+volumeMesh.initializeFromPointCloud(volumePoints);  % delaunay tet mesh from points
+
+% calculation our field values at the nodes (this may take a while)
 %--------------------------------------------------------------------------
-
-volumeMesh = VolumeMesh(mesh);
-volumeMesh.initializeFromPointCloud(volumePoints);
-
-% calculation our field values at the nodes
 pts = volumeMesh.coordinates;
 truthAcceleration = analyticModelTruth.acceleration(pts);
 polyhedralAcceleration    = analyticModelCoarse.acceleration(pts);
@@ -77,6 +93,10 @@ epsPoly = 100*vecnorm(truthAcceleration-polyhedralAcceleration,2,2)./vecnorm(tru
 
 
 % load the fields in and export for viewing w/ paraview
+%--------------------------------------------------------------------------
+
+% Fig 8, 11, 12 created in paraview
+%----------------------------------
 volumeMesh.clearFields();
 volumeMesh.addNodeField(h,'altitude');
 volumeMesh.addNodeField(lap_fR,'lap_fR2');
@@ -84,7 +104,7 @@ volumeMesh.addNodeField(lap_QM,'lap_QM');
 volumeMesh.addNodeField(lap_QMP2,'lap_QMP2');
 volumeMesh.addNodeField(epsTotP2,'epsP2');
 volumeMesh.addNodeField(epsNumP1,'epsP1');
-olumeMesh.addNodeField(epsPoly,'epsPoly');
+volumeMesh.addNodeField(epsPoly,'epsPoly');
 volumeMesh.addNodeField(approximateAcceleration,'acc_P1');
 volumeMesh.addNodeField(approximateAccelerationP2,'acc_P2');
 volumeMesh.addNodeField(polyhedralAcceleration,'acc_poly');
@@ -92,47 +112,10 @@ volumeMesh.addNodeField(truthAcceleration,'acc');
 volumeMesh.writeVTK('testExternalMeshOut.vtk')
 
 
-%sMeshCoarse = meshCoarse;
-%submergedQuadratureModel = ApproximatePolyhedralModel(sMeshCoarse,Mu);
-pts = mesh.coordinates;
-surfAccTrue = analyticModelTruth.acceleration(pts);
-surfAcc = analyticModelCoarse.acceleration(pts);
-surfSQM = quadratureModelP2.acceleration(pts);
-surfQM = quadratureModel.acceleration(pts);
-epsApprox = 100*vecnorm(surfQM-surfAccTrue,2,2)./vecnorm(surfAccTrue,2,2);
-epsApproxSub = 100*vecnorm(surfSQM-surfAccTrue,2,2)./vecnorm(surfAccTrue,2,2);
-epsPoly = 100*vecnorm(surfAcc-surfAccTrue,2,2)./vecnorm(surfAccTrue,2,2);
 
-
-stop
-surfQM2 = quadratureModel.acceleration(pts);
-epsApprox2 = 100*vecnorm(surfQM2-surfAccTrue,2,2)./vecnorm(surfAccTrue,2,2);
-mesh = mesh.clearFields();
-mesh = mesh.addNodeField(epsApprox,'epsapproxP1');
-mesh = mesh.addNodeField(epsApprox2,'epsapproxNoMax');
-mesh = mesh.addNodeField(epsApproxSub,'epsapproxP2');
-mesh = mesh.addNodeField(epsPoly,'epspoly');
-
-mesh.writeVTK('surfaceMesh.vtk')
-meshCoarse.writeVTK('surfaceMeshCoarse.vtk')
-% sMeshCoarse = meshCoarseP2;
-% 
-% Factor = 0.00;
-% sMeshCoarse.coordinates = sMeshCoarse.coordinates - sMeshCoarse.nodeNormals()*Factor*sMeshCoarse.resolution;
-% sMeshCoarse.volume = sMeshCoarse.calculateVolume();
-% submergedQuadratureModel = ApproximatePolyhedralModel(sMeshCoarse,Mu);
-% surfSQM = submergedQuadratureModel.acceleration(pts);
-% epsApproxSub = 100*vecnorm(surfSQM-surfAccTrue,2,2)./vecnorm(surfAccTrue,2,2);
-% 
-% mesh = mesh.clearFields();
-% mesh = mesh.addNodeField(epsApprox,'epsapprox');
-% mesh = mesh.addNodeField(epsApproxSub,'epsapproxSUB2');
-% mesh = mesh.addNodeField(epsPoly,'epspoly');
-% mesh.writeVTK('surfaceMesh.vtk')
-% meshCoarseP2.writeVTK('featureRefine.vtk')
-% sMeshCoarse.writeVTK('subfeatureRefine.vtk')
-
-figure(2)
+% Fig 13
+%--------
+figure(1)
 hold on 
 plot(h(lap_fR<-6.28)/mesh.resolution,lap_fR(lap_fR<-6.28),'ko','MarkerFaceColor','c')
 plot(h(lap_fR>-6.28)/mesh.resolution,lap_fR(lap_fR>-6.28),'ko','MarkerFaceColor','r')

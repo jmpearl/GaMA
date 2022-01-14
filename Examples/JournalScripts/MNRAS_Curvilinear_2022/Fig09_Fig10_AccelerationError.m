@@ -1,3 +1,16 @@
+%==========================================================================
+% Script used to create Figure 9 and 10
+% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
+% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% MNRAS, 2022 (submitted).
+%
+% ** Note GaMA is under development small variations from published 
+% ** results may occur.
+%
+% plots acceleration error of quadrature and analytic models as a function
+% of normalized altitude
+%==========================================================================
+
 clear all; clc; close all;
 
 % Constants
@@ -10,7 +23,7 @@ altitudes = logspace(-1,4,numAltitudes);
 
 % meshes
 numFacesCoarsest  =  2100;  % coarsest test mesh
-numFacesFinest    = 45000;  % finest test mesh
+numFacesFinest    = 23000;  % finest test mesh
 numFacesTruthMesh = 50000;  % reference mesh
 
 % degrees of quad rules
@@ -43,7 +56,7 @@ i=1;
 while meshCoarse.numFaces>numFacesCoarsest
 
     % get coarse mesh
-    meshCoarse.coarsen(meshCoarse.numFaces-2000);
+    meshCoarse.coarsen(meshCoarse.numFaces-1000);
     meshCoarse.smooth(1);
     meshCoarse.projectOnTo(mesh);
 

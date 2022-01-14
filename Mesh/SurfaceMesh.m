@@ -1890,7 +1890,13 @@ classdef SurfaceMesh < handle
             lowValenceCandidates = obj.vertexHalfEdges(find(numSpokes==3));
                 
             % metrics for edge collapse
-            selectionMetric = obj.initializeSelectionMetric(isFeatureBased);
+            selectionMetric = obj.halfEdgeLengths();
+            if isFeatureBased
+                angleVertices = obj.vertexAverageAngles();
+                edgeAngles = (angleVertices(obj.ends) +...
+                              angleVertices(obj.ends(obj.pair)))/2;
+                selectionMetric=selectionMetric.*edgeAngles;
+            end
             selectionMetric(obj.isFixedHalfEdge==1) = nan;
             [~,sortIndex] = sort(selectionMetric);
             
@@ -1943,21 +1949,21 @@ classdef SurfaceMesh < handle
                     p3 = obj.ends(he4);
                     
                     % flip collapse direction if better quality
-%                     p1Spokes =  obj.spokeHalfEdges(p1);
-%                     p3Spokes =  obj.spokeHalfEdges(p3);
-%                 
-%                     p1MeanSpokeLength = mean(lengths(p1Spokes));
-%                     p3MeanSpokeLength = mean(lengths(p3Spokes));
-%                 
-%                     if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
-%                         temp = he4;
-%                         he4 = he1;
-%                         he1 = temp;
-%                     
-%                         temp = p3;
-%                         p3 = p1;
-%                         p1 = temp;
-%                     end
+                    p1Spokes =  obj.spokeHalfEdges(p1);
+                    p3Spokes =  obj.spokeHalfEdges(p3);
+                
+                    p1MeanSpokeLength = mean(selectionMetric(p1Spokes));
+                    p3MeanSpokeLength = mean(selectionMetric(p3Spokes));
+                
+                    if p3MeanSpokeLength < p1MeanSpokeLength && length(p1Spokes)>4
+                        temp = he4;
+                        he4 = he1;
+                        he1 = temp;
+                    
+                        temp = p3;
+                        p3 = p1;
+                        p1 = temp;
+                    end
                     
                     % now p1 and p3 are finalized we need to find the two
                     % nodes that will have reduced spokes counts after the
@@ -2005,7 +2011,18 @@ classdef SurfaceMesh < handle
                     % update our metric for collpase
                     modifiedEdges = unique([modifiedEdges;obj.spokeHalfEdges(p3)]);
                     modifiedVertices = unique([modifiedVertices;obj.collapseModifiedVertices(p3)]);
-                    modifiedMetric = obj.calculateSelectionMetric(modifiedEdges,modifiedVertices,isFeatureBased);
+
+                    modifiedFixedEdges = obj.isFixedHalfEdge(modifiedEdges);
+                    modifiedEdges = modifiedEdges(modifiedFixedEdges==0);
+                    modifiedMetric = obj.halfEdgeLengths(modifiedEdges);
+
+                    if isFeatureBased
+                        angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
+                        modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +...
+                            angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;
+                        modifiedMetric=modifiedMetric.*modifiedAngles;
+                    end
+
                     selectionMetric(modifiedEdges) = modifiedMetric;
 
                     % check if we create any questionable cycles
@@ -3665,7 +3682,6 @@ classdef SurfaceMesh < handle
             modifiedMetric = obj.halfEdgeLengths(modifiedEdges);
 
             if isFeatureBased
-                angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
                 angleVertices(modifiedVertices) = obj.vertexAverageAngles(modifiedVertices);
                 modifiedAngles = (angleVertices(obj.ends(modifiedEdges)) +...
                     angleVertices(obj.ends(obj.pair(modifiedEdges))))/2;

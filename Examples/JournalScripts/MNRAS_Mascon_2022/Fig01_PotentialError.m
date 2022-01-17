@@ -18,7 +18,7 @@ clear all; clc; close all;
 % constant altitude surface parameters
 numPointsCAS = 500;       % number of points on CAS
 numPointsBaseCAS = 4000;  % number of points on origin mesh
-numAltitudes = 20;
+numAltitudes = 5;
 altitudes = logspace(-1,4,numAltitudes);
 
 % meshes
@@ -27,7 +27,7 @@ numMascons        = 10000;  % number of mascons
 numFacesTruthMesh = 50000;  % reference mesh
 
 % degrees of quad rules
-quadRules = [1,2,3,4];   % mesh degrees we'll test
+%quadRules = [1,2,3,4];   % mesh degrees we'll test
 
 % body parameters
 %--------------------------------------------------------------------------
@@ -46,13 +46,29 @@ mesh.setNumFaces(numFacesTruthMesh);
 meshCoarse = SurfaceMesh(mesh);           % copy  construct
 meshCoarse.setNumFaces(numFacesCoarse);   % coarsen to
 
+volMesh = VolumeMesh(meshCoarse);
+volMesh.initializeFromSimpleLattice(numMascons);
+%volMesh.smooth()
+volMesh.writeVTK('VTK.vtk')
+
 % Gravity Models
 %-------------------------------------------------------------------------
 truthGravityModel = AnalyticPolyhedralModel(mesh,Mu);
 
 polyhedralModel{1} = AnalyticPolyhedralModel(meshCoarse,Mu);
 masconModel{1} = MasconModel(meshCoarse,Mu,numMascons);
+masconModel{2} = MasconModel();
+masconModel{2}.initializeFromVolumeMesh(volMesh,Mu,'vertex');
 
+figure(1)
+hold on 
+plot3(meshCoarse.coordinates(:,1),...
+      meshCoarse.coordinates(:,2),...
+      meshCoarse.coordinates(:,3),'k.')
+plot3(masconModel{2}.coordinates(:,1),...
+      masconModel{2}.coordinates(:,2),...
+      masconModel{2}.coordinates(:,3),'ro')
+daspect([1,1,1])
 % Acceleration and Error
 %--------------------------------------------------------------------------
 % create dummy mesh for our constant altitude surfaces

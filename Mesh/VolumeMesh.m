@@ -664,11 +664,15 @@ classdef VolumeMesh < handle
             end
 
             for j = 1:numIterations
+                vol = obj.cellVolumes();
                 delta = zeros(obj.numVertices,3);
                 wsum = zeros(obj.numVertices,1);
                 for i = 1:obj.numCells
+
+                    voli = vol(i);
                     vertices = obj.cells(i,:);
                     coords = obj.coordinates(vertices,:);
+
                     v1 = coords(2,:)-coords(1,:);
                     v2 = coords(3,:)-coords(1,:);
                     v3 = coords(4,:)-coords(1,:);
@@ -676,19 +680,20 @@ classdef VolumeMesh < handle
                     v5 = coords(4,:)-coords(2,:);
                     v6 = coords(4,:)-coords(3,:);
 
-                    delta(vertices(1),:) = delta(vertices(1),:) +v1+v2+v3;
-                    delta(vertices(2),:) = delta(vertices(2),:) -v1+v4+v5;
-                    delta(vertices(3),:) = delta(vertices(3),:) -v2-v4+v6;
-                    delta(vertices(4),:) = delta(vertices(4),:) -v3-v5-v6;
+                    delta(vertices(1),:) = delta(vertices(1),:) +( v1+v2+v3)*voli;
+                    delta(vertices(2),:) = delta(vertices(2),:) +(-v1+v4+v5)*voli;
+                    delta(vertices(3),:) = delta(vertices(3),:) +(-v2-v4+v6)*voli;
+                    delta(vertices(4),:) = delta(vertices(4),:) +(-v3-v5-v6)*voli;
 
-                    wsum(vertices(1)) = wsum(vertices(1))+3;
-                    wsum(vertices(2)) = wsum(vertices(2))+3;
-                    wsum(vertices(3)) = wsum(vertices(3))+3;
-                    wsum(vertices(4)) = wsum(vertices(4))+3;
+                    wsum(vertices(1)) = wsum(vertices(1))+3*voli;
+                    wsum(vertices(2)) = wsum(vertices(2))+3*voli;
+                    wsum(vertices(3)) = wsum(vertices(3))+3*voli;
+                    wsum(vertices(4)) = wsum(vertices(4))+3*voli;
 
 
                 end
                 delta(obj.isBoundaryNode==1,:) = 0;
+                max(vecnorm(delta,2,2))
                 obj.coordinates = obj.coordinates + delta./wsum;
             end
         end

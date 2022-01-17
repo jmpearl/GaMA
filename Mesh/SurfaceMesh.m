@@ -1491,6 +1491,21 @@ classdef SurfaceMesh < handle
             
         end
         
+        function setResolution(obj,newResolution)
+        % coarsen/refines mesh to a spec. resolution (length scale)
+        %------------------------------------------------------------------
+        % Inputs:
+        %   newResolution -- length scale of mesh
+        %------------------------------------------------------------------
+            
+           newNumFaces = obj.surfaceArea/newResolution^2;
+            
+            if newNuFaces < 20
+                warning('very low face count might fail')
+                
+            obj.setNumFaces(newNumFaces);
+
+        end
         function setNumFaces(obj,numFaces)
         % wrapper to refine/coarsen to a desired number of faces
         %------------------------------------------------------------------

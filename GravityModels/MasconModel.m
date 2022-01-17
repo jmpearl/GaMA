@@ -1,10 +1,10 @@
-classdef MasconModel
+classdef MasconModel < handle
 % Mass-concentration model 
 %--------------------------------------------------------------------------
 %
     properties(GetAccess=public)
         mu;          % G x mass of mascon
-        positions;   % coordinates of mascons
+        coordinates;   % coordinates of mascons
         
         numElements  % number of computational elements
     end    
@@ -40,7 +40,7 @@ classdef MasconModel
                     
                     ds = (mesh.volume/numMascons)^(1/3);
                     obj = obj.initializeSimplePacking( mesh, ds, Mu);
-                    obj.mu = Mu*ones(size(obj.positions,1),1)/size(obj.positions,1);
+                    obj.mu = Mu*ones(size(obj.coordinates,1),1)/size(obj.coordinates,1);
                     
                 elseif strcmp(distributionType,'extendedTetrahedra')
                     
@@ -57,7 +57,7 @@ classdef MasconModel
             end
             
         end
-        function obj = initializeFromVolumeMesh(obj, volumeMesh,Mu,quadratureMethod)
+        function initializeFromVolumeMesh(obj, volumeMesh,Mu,quadratureMethod)
         % initializes a mascon distribution from VolumeMesh
         %------------------------------------------------------------------
         % Inputs:
@@ -80,20 +80,23 @@ classdef MasconModel
             end
 
             switch quadratureMethod
-                case strcmpi(quadratureMethod,'vertex')
-                    [cm,vol] = VolumeMesh.vertexCentroids();
-                case strcmpi(quadratureMethod,'cell')
-                    [cm,vol] = VolumeMesh.cellCentroids();
-                case strcmpi(quadratureMethod,'node')
-                    [cm,vol] = VolumeMesh.nodeCentroids();
+                case 'vertex'
+                    [cm,vol] = volumeMesh.vertexCentroids();
+                case 'cell'
+                    [cm,vol] = volumeMesh.cellCentroids();
+                case 'node'
+                    [cm,vol] = volumeMesh.nodeCentroids();
+                otherwise
+                    error('that aint right')
+
             end
-            
-            obj.positions = cm;
+
+            obj.coordinates = cm;
             obj.mu = vol/sum(vol)*Mu;
             obj.numElements = size(cm,1);
 
         end
-        function obj = initializeSimplePacking(obj, mesh, spacing, Mu)
+        function initializeSimplePacking(obj, mesh, spacing, Mu)
         % mascons packed in a primitive cubic lattice.
         %------------------------------------------------------------------
         % Inputs:
@@ -141,12 +144,12 @@ classdef MasconModel
             isKeeper = mesh.isInside(candidates);
             
             % package as Nx3 matrix
-            obj.positions = candidates(isKeeper>0.5,:);
-            obj.mu = Mu/size(obj.positions,1);
+            obj.coordinates = candidates(isKeeper>0.5,:);
+            obj.mu = Mu/size(obj.coordinates,1);
             obj.numElements = size(obj.mu,1);
             
         end
-        function obj = initializeExtendedTetrahedra(obj, mesh, numLayers, Mu)
+        function initializeExtendedTetrahedra(obj, mesh, numLayers, Mu)
         % Mascons distribution technique of Chanut et al. 2015
         %------------------------------------------------------------------
         % Mascon distribution method proposed by T.G.G Chanut, S. Aljbaae,
@@ -186,7 +189,7 @@ classdef MasconModel
             p3 = vertices(mesh.faces(:,3),:);
             
             
-            obj.positions = zeros(numLayers*mesh.numFaces,3);
+            obj.coordinates = zeros(numLayers*mesh.numFaces,3);
             volumes = zeros(numLayers*mesh.numFaces,1);
             
             % outer prism layers
@@ -213,7 +216,7 @@ classdef MasconModel
                 
                 % sum to get prism properties from tetrahedra
                 volumes(i1:i2,1) = vol1+vol2+vol3;
-                obj.positions(i1:i2,1:3) = (c1.*vol1+c2.*vol2+c3.*vol3)...
+                obj.coordinates(i1:i2,1:3) = (c1.*vol1+c2.*vol2+c3.*vol3)...
                     ./volumes(i1:i2,1);
                 
                 p1=p4; p2=p5; p3=p6; % reset iterations
@@ -226,8 +229,8 @@ classdef MasconModel
             i1 = mesh.numFaces*(i-1)+1;
             i2 = mesh.numFaces*i;
             
-            obj.positions(i1:i2,1:3)  = (p1+p2+p3)/4;
-            obj.positions = obj.positions + mesh.centroid;
+            obj.coordinates(i1:i2,1:3)  = (p1+p2+p3)/4;
+            obj.coordinates = obj.coordinates + mesh.centroid;
             
             volumes(i1:i2,1) = abs(dot((p1),cross(p2,p3,2),2)/6);
             obj.mu = Mu*volumes/sum(volumes);
@@ -248,7 +251,7 @@ classdef MasconModel
             
             for i = 1:size(p,1)
                 
-                r = obj.positions-p(i,:);
+                r = obj.coordinates-p(i,:);
                 rinv = 1./sqrt(r(:,1).^2+r(:,2).^2+r(:,3).^2);
                 
                 potential(i,1) =-obj.mu'*rinv;
@@ -270,7 +273,7 @@ classdef MasconModel
             
             for i = 1:size(p,1)
                 
-                r = obj.positions-p(i,:);
+                r = obj.coordinates-p(i,:);
                 rinv3 = 1./(r(:,1).^2+r(:,2).^2+r(:,3).^2).^(3/2);
                 
                 acceleration(i,1:3) = (obj.mu.*rinv3)'*r;
@@ -304,7 +307,7 @@ classdef MasconModel
             
             for i = 1:size(p,1)
                 
-                r = obj.positions-p(i,:);
+                r = obj.coordinates-p(i,:);
                 rinv = 1./sqrt(r(:,1).^2+r(:,2).^2+r(:,3).^2);
                 rhat = r.*rinv; 
                 muOverR3 = (obj.mu.*rinv.^3);

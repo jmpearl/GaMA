@@ -11,6 +11,9 @@ classdef VolumeMesh < handle
 % it is assumed that the surface mesh vertices are the first set of nodes 
 % followed by internal vertices and then any higher degree nodes e.g. 
 % edges, faces, and cell center.
+%
+% *** Note this class is somewhat new and may be subject to change *******
+%
 %--------------------------------------------------------------------------
 % Abreviations:
 %       e ----- unique edge
@@ -24,7 +27,8 @@ classdef VolumeMesh < handle
 %--------------------------------------------------------------------------
     
 % need set/get and delete methods for the surface mesh for hasSurfaceMesh
-% safety
+% safety, register volume meshes with surface meshes to track alterations
+% and automatically update
 
     properties (GetAccess=public)
         coordinates         % coordinates of nodes
@@ -72,7 +76,6 @@ classdef VolumeMesh < handle
             if nargin == 1
                 if isa(mesh,'SurfaceMesh')
                     obj.surfaceMesh=mesh;
-                    obj.hasSurfaceMesh=true;
                 elseif isa(mesh,'VolumeMesh')
                     obj.copy(mesh);
                 end
@@ -117,11 +120,10 @@ classdef VolumeMesh < handle
 
             obj.clearFields()
 
-            obj.hasSurfaceMesh=false;
             obj.isCurved=false;
             obj.degree=1;
             obj.volume=0;
-            obj.surfaceArea=0;
+            obj.surfaceArea=[];
             obj.centroid=0;
             obj.resolution=0;
 
@@ -135,7 +137,27 @@ classdef VolumeMesh < handle
 
         end
 
-        function initializeFromPointCloud(obj,internalCoordinates,clipZone)
+        function set.surfaceMesh(obj,surfaceMesh)
+        % set method for the internal surface mesh reference
+        %------------------------------------------------------------------
+        % Inputs:
+        %   surfaceMesh -- SurfaceMesh object
+        %------------------------------------------------------------------
+            if isa(surfaceMesh,"SurfaceMesh")
+                obj.surfaceMesh=surfaceMesh;
+                obj.hasSurfaceMesh = true;
+            elseif isempty(surfaceMesh)
+                obj.surfaceMesh=[];
+                obj.hasSurfaceMesh = false;
+            else
+                error("incorrect input type, must be SurfaceMesh")
+            end
+        end
+        function clearSurfaceMesh(obj)
+            obj.surfaceMesh=[];
+        end
+
+        function initializeFromPointCloud(obj,points,clipZone)
         % constructions mesh from set of internal vertices
         %------------------------------------------------------------------
         % Inputs:
@@ -144,14 +166,14 @@ classdef VolumeMesh < handle
         %------------------------------------------------------------------
             if nargin == 3
                clipZone = lower(clipZone);
-               assert (strcmp(clipZone,'internal') || strcmp(clipZone,'external'),"incorrect clipzone must be 'internal' or 'external'")
+               assert (strcmp(clipZone,'internal') || strcmp(clipZone,'external') || strcmp(clipZone,'none'),"incorrect clipzone must be 'internal','external', or 'none'")
             elseif nargin == 2
-                clipZone = 'None';
+                clipZone = 'none';
             else
                 error('incorrect number of inputs')
             end
             
-            obj.coordinates = internalCoordinates;
+            obj.coordinates = points;
             if obj.hasSurfaceMesh
                 obj.coordinates = [obj.surfaceMesh.coordinates;obj.coordinates];
             end
@@ -172,7 +194,7 @@ classdef VolumeMesh < handle
             obj.numBoundaryVertices = sum(obj.isBoundaryNode);
             obj.numBoundaryNodes = obj.numBoundaryVertices;
 
-            obj.initializeBulkProperties;
+            obj.initializeBulkProperties();
 
         end
         function initializeFromSimpleLattice(obj,numInternalVertices)
@@ -212,7 +234,7 @@ classdef VolumeMesh < handle
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
             candidates = candidates(internalNodes,:);
 
-            obj.initializeFromPointCloud(candidates);
+            obj.initializeFromPointCloud(candidates,'internal');
 
         end
         function initializeFromBCCLattice(obj,numInternalVertices)
@@ -221,7 +243,7 @@ classdef VolumeMesh < handle
         % Inputs:
         %   numInternalVertices -- approximate number of internal vertices
         %------------------------------------------------------------------
-
+            
             % approximate lattice spacing
             ds = (2*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
 
@@ -243,7 +265,7 @@ classdef VolumeMesh < handle
 
             % get the grid
             [X,Y,Z] = meshgrid(x,y,z);
-
+            candidates = PointCloud.createBCCLattice(numVertices);
             % create a buffer 
             insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
                                                                   obj.surfaceMesh.numVertices);
@@ -253,7 +275,7 @@ classdef VolumeMesh < handle
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
             candidates = candidates(internalNodes,:);
 
-            obj.initializeFromPointCloud(candidates);
+            obj.initializeFromPointCloud(candidates,'internal');
         end
         function initializeFromFCCLattice(obj,numInternalVertices)
         % initializes a volume mesh w/ BCC lattice point distribution
@@ -297,7 +319,7 @@ classdef VolumeMesh < handle
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
             candidates = candidates(internalNodes,:);
 
-            obj.initializeFromPointCloud(candidates);
+            obj.initializeFromPointCloud(candidates,'internal');
         end
         function initializeFromSurfaceIteration(obj,ratio)
         % initialize volume mesh by iteratively offseting the surface 
@@ -350,7 +372,7 @@ classdef VolumeMesh < handle
                 % add our points
                 newCoordinates = [newCoordinates;tempMesh.coordinates];
             end
-            obj.initializeFromPointCloud(newCoordinates);
+            obj.initializeFromPointCloud(newCoordinates,'internal');
         end
         function initializeFromOctree(obj,numInitialInternalVertices,...
                                           numLayers,...
@@ -467,7 +489,7 @@ classdef VolumeMesh < handle
                 end
 
             end
-            obj.initializeFromPointCloud(cm);
+            obj.initializeFromPointCloud(cm,'internal');
             obj.initializeBulkProperties();
         end
         function initializeBulkProperties(obj)
@@ -484,10 +506,7 @@ classdef VolumeMesh < handle
 
         end
 
-        function createGrid(obj,...
-                                      minCoordinates,...
-                                      maxCoordinates,...
-                                      numDivisions)
+        function createGrid(obj,minCoordinate,maxCoordinate,numDivisions)
         % creates a 3d cartesian grid 
         %------------------------------------------------------------------
         % Inputs:
@@ -496,19 +515,19 @@ classdef VolumeMesh < handle
         %   numDivisions ---- number of cells in x,y,z
         %------------------------------------------------------------------
         
-            if length(minCoordinates)~=3
+            if length(minCoordinate)~=3
                 error('minCoordinates must be 1x3')
             end
-            if length(maxCoordinates)~=3
+            if length(maxCoordinate)~=3
                 error('maxCoordinates must be 1x3')
             end
             if length(numDivisions)~=3
                 error('numDivisions must be 1x3')
             end
             
-            x = linspace(minCoordinates(1),maxCoordinates(1),numDivisions(1));
-            y = linspace(minCoordinates(2),maxCoordinates(2),numDivisions(2));
-            z = linspace(minCoordinates(3),maxCoordinates(3),numDivisions(3));
+            x = linspace(minCoordinate(1),maxCoordinate(1),numDivisions(1));
+            y = linspace(minCoordinate(2),maxCoordinate(2),numDivisions(2));
+            z = linspace(minCoordinate(3),maxCoordinate(3),numDivisions(3));
             
             [X,Y,Z] = meshgrid(x,y,z);
             
@@ -573,20 +592,20 @@ classdef VolumeMesh < handle
                         obj.flatten();
                     case 2
                         [edges, ~, ~, cellEdges] = obj.edgesAndRelations();
-                        size(obj.coordinates);
+                        %size(obj.coordinates);
 
                         % add midpoints to our coords
                         obj.coordinates = [obj.coordinates;...
                             0.5*(obj.coordinates(edges(:,1),:) +...
-                            obj.coordinates(edges(:,2),:))];
-                        size(obj.coordinates);
+                                 obj.coordinates(edges(:,2),:))];
+                        %size(obj.coordinates);
 
                         % midpoints on boundary
                         isBoundaryEdge = 0.5*(obj.isBoundaryNode(edges(:,1),:) +...
-                            obj.isBoundaryNode(edges(:,2),:));
+                                              obj.isBoundaryNode(edges(:,2),:));
                         isBoundaryEdge(isBoundaryEdge<0.75) = 0;
                         obj.isBoundaryNode=[obj.isBoundaryNode;...
-                            isBoundaryEdge];
+                                            isBoundaryEdge];
 
                         % increase index so cells point to right location
                         cellEdges = cellEdges + obj.numVertices;
@@ -611,6 +630,7 @@ classdef VolumeMesh < handle
                     otherwise
                         error('specified degree not supported')
                 end
+                obj.surfaceMesh.setDegree(degree)
             end
         end
         function flatten(obj)
@@ -629,38 +649,48 @@ classdef VolumeMesh < handle
                 obj.initializeBulkProperties();
                 obj.numBoundaryNodes = sum(obj.isBoundaryNode);
                 obj.numNodes = size(obj.coordinates,1);
+
+                obj.surfaceMesh.flatten();
             end
         end
-        function smooth(obj)
+        function smooth(obj,numIterations)
         % simple smoothing with uniform weights
         %------------------------------------------------------------------
+        % numIterations --- number of smoothing iterations
+        %------------------------------------------------------------------
 
-            delta = zeros(obj.numVertices,3);
-            wsum = zeros(obj.numVertices,1);
-            for i = 1:obj.numCells
-                vertices = obj.cells(i,:);
-                coords = obj.coordinates(vertices,:);
-                v1 = coords(2,:)-coords(1,:);
-                v2 = coords(3,:)-coords(1,:);
-                v3 = coords(4,:)-coords(1,:);
-                v4 = coords(3,:)-coords(2,:);
-                v5 = coords(4,:)-coords(2,:);
-                v6 = coords(4,:)-coords(3,:);
-
-                delta(vertices(1),:) = delta(vertices(1),:) +v1+v2+v3;
-                delta(vertices(2),:) = delta(vertices(2),:) -v1+v4+v5;
-                delta(vertices(3),:) = delta(vertices(3),:) -v2-v4+v6;
-                delta(vertices(4),:) = delta(vertices(4),:) -v3-v5-v6;
-                
-                wsum(vertices(1)) = wsum(vertices(1))+3;
-                wsum(vertices(2)) = wsum(vertices(2))+3;
-                wsum(vertices(3)) = wsum(vertices(3))+3;
-                wsum(vertices(4)) = wsum(vertices(4))+3;
-
-
+            if nargin == 1
+                numIterations = 1;
             end
-            delta(obj.isBoundaryNode==1,:) = 0;
-            obj.coordinates = obj.coordinates + delta./wsum;
+
+            for j = 1:numIterations
+                delta = zeros(obj.numVertices,3);
+                wsum = zeros(obj.numVertices,1);
+                for i = 1:obj.numCells
+                    vertices = obj.cells(i,:);
+                    coords = obj.coordinates(vertices,:);
+                    v1 = coords(2,:)-coords(1,:);
+                    v2 = coords(3,:)-coords(1,:);
+                    v3 = coords(4,:)-coords(1,:);
+                    v4 = coords(3,:)-coords(2,:);
+                    v5 = coords(4,:)-coords(2,:);
+                    v6 = coords(4,:)-coords(3,:);
+
+                    delta(vertices(1),:) = delta(vertices(1),:) +v1+v2+v3;
+                    delta(vertices(2),:) = delta(vertices(2),:) -v1+v4+v5;
+                    delta(vertices(3),:) = delta(vertices(3),:) -v2-v4+v6;
+                    delta(vertices(4),:) = delta(vertices(4),:) -v3-v5-v6;
+
+                    wsum(vertices(1)) = wsum(vertices(1))+3;
+                    wsum(vertices(2)) = wsum(vertices(2))+3;
+                    wsum(vertices(3)) = wsum(vertices(3))+3;
+                    wsum(vertices(4)) = wsum(vertices(4))+3;
+
+
+                end
+                delta(obj.isBoundaryNode==1,:) = 0;
+                obj.coordinates = obj.coordinates + delta./wsum;
+            end
         end
         function edges = edges(obj)
         % unique edges within mesh
@@ -683,8 +713,7 @@ classdef VolumeMesh < handle
             nodej = [2,3,4,1,2,3];
             
             % for each cell loop the local edges
-            for i = 1:obj.numCells
-                
+            for i = 1:obj.numCells 
                 for j = 1:6
                     
                     vertex1 = obj.cells(i,nodei(j));
@@ -1146,7 +1175,7 @@ classdef VolumeMesh < handle
             else
                 
                 % high degree quadrature rule (Nix1)
-                quadratureOrder = obj.degree+2;
+                quadratureOrder = 6;%obj.degree+2;
                 [u,v,w,weights] =  NewtonCotesTetrahedron(quadratureOrder);
 
                 % Ng basis functions assessed at the Ni quad points (NixNg)
@@ -1409,7 +1438,8 @@ classdef VolumeMesh < handle
                 boundaryNormals = obj.boundaryNodeNormals();
                 newCoordinates = surfaceMesh.project(boundaryNodeCoords,boundaryNormals);
                 obj.coordinates(obj.isBoundaryNode==1,:) = newCoordinates;
-                
+                obj.surfaceMesh.curve(surfaceMesh);
+                obj.initializeBulkProperties();
             else
                 error('requires surface mesh input')
             end
@@ -1528,6 +1558,22 @@ classdef VolumeMesh < handle
             
         end
         
+        function plotCellNodes(obj,i)
+
+            figure(1)
+            hold on
+            if obj.isCurved
+                markers = {'k^','ro','k>','rs','rp','kv','rh','bo','bs','k<'};
+            else
+                markers = {'k^','k>','kv','k<'};
+            end
+            for j = 1:size(obj.cells,2)
+                nodeIndex = obj.cells(i,j);
+                nodeCoord = obj.coordinates(nodeIndex,:);
+                plot3(nodeCoord(:,1),nodeCoord(:,2),nodeCoord(:,3),markers{j},'MarkerFaceColor','y');
+            end
+            daspect([1,1,1]);
+        end
     end
     
     methods(Access=private)

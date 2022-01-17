@@ -57,6 +57,42 @@ classdef MasconModel
             end
             
         end
+        function obj = initializeFromVolumeMesh(obj, volumeMesh,Mu,quadratureMethod)
+        % initializes a mascon distribution from VolumeMesh
+        %------------------------------------------------------------------
+        % Inputs:
+        %   volumeMesh ------- initialize volume mesh object
+        %   Mu --------------- standard gravitational parameter
+        %   quadratureMethod - 'nodes', 'cells','vertices'
+        %   centerOfMass ----- true/false quads at COMs?
+        %------------------------------------------------------------------
+        
+            % error checking and defaults
+            %--------------------------------------------------------------
+            assert(nargin >= 3, 'requires VolumeMesh and stand grav param as inputs');
+            assert(isa(volumeMesh,"VolumeMesh"),"first input must be VolumeMesh")
+            assert(isnumeric(Mu),"Second inputqm stand grav param must be number")
+            if nargin == 4
+                assert(any(strcmpi(quadratureMethod,{'vertex','node','cell'})), ...
+                       "valid quadrature methods 'vertex' 'node' 'cell'")
+            else
+                quadratureMethod = 'vertex';
+            end
+
+            switch quadratureMethod
+                case strcmpi(quadratureMethod,'vertex')
+                    [cm,vol] = VolumeMesh.vertexCentroids();
+                case strcmpi(quadratureMethod,'cell')
+                    [cm,vol] = VolumeMesh.cellCentroids();
+                case strcmpi(quadratureMethod,'node')
+                    [cm,vol] = VolumeMesh.nodeCentroids();
+            end
+            
+            obj.positions = cm;
+            obj.mu = vol/sum(vol)*Mu;
+            obj.numElements = size(cm,1);
+
+        end
         function obj = initializeSimplePacking(obj, mesh, spacing, Mu)
         % mascons packed in a primitive cubic lattice.
         %------------------------------------------------------------------

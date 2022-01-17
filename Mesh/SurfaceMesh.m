@@ -1502,7 +1502,8 @@ classdef SurfaceMesh < handle
             
             if newNuFaces < 20
                 warning('very low face count might fail')
-                
+            end
+            warni
             obj.setNumFaces(newNumFaces);
 
         end

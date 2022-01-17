@@ -133,7 +133,7 @@ classdef SphericalHarmonicModel
             end
             
             % ensure we're working with polyhedron
-            mesh = mesh.flatten();
+            mesh.flatten();
             
             pts = mesh.coordinates;
             f = mesh.faces;

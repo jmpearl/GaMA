@@ -1,7 +1,8 @@
-*.png
 *.vtk
 *.asv
 *.py
+*.png
+!ErosSlopes.png
 
 myaa.m
 

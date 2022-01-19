@@ -23,7 +23,7 @@ Contribution are welcome and those interested in contributing should see the [CO
 ### Release and License
 Copyright (c) 2022, Lawrence Livermore National Security, LLC. 
 
-This work was produced under the auspices of the U.S. Department of Energy by Lawrence Livermore National Laboratory under Contract DE-AC52-07NA27344 and was partially funded by the Vermont Space Grant Consortium under NASA Cooperative Agreement NNX15AP86H.
+This work was produced under the auspices of the U.S. Department of Energy by Lawrence Livermore National Laboratory under Contract DE-AC52-07NA27344, with additional funded by the Vermont Space Grant Consortium under NASA Cooperative Agreement NNX15AP86H.
 
 LLNL-CODE-XXXXXXXX
 

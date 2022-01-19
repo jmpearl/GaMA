@@ -1,4 +1,3 @@
-addpath(genpath('/home/jmpearl/GravityModels/cleanedCode/GravModel_OOP'))
 
 AU2m = 1.496e11
 

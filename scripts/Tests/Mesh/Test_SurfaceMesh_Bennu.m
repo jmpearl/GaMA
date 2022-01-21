@@ -12,7 +12,7 @@ end
 tol = 1e-14;
 
 
-meshfile = 'Bennu_1442.obj'; %'Eros_1208.obj';
+meshfile = 'Bennu_2692.obj';
 
 mesh = SurfaceMesh(meshfile);
 mesh.writeOBJ('Bennu_TestMesh.obj',8);

@@ -6,7 +6,7 @@ function failed = Test_VolumeMesh_Bennu(failed)
 tol = 1e-14;
 
 
-meshfile = 'Bennu_1442.obj';
+meshfile = 'Bennu_2692.obj';
 
 sm = SurfaceMesh(meshfile);          % construct surface mesh
 vm = VolumeMesh(sm);                 % construct volume mesh

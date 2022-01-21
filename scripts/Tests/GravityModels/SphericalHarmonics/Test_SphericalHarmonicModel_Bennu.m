@@ -18,7 +18,7 @@ Nsample = 1000;                     % number of times to calculate to timing
 P = [300,-100,100];                 % location of calculation
 N = 8;                              % number of harmonics
 Mu = 1.0;                           % standard grav param
-meshfile = 'Bennu_1442.obj';        % mesh file
+meshfile = 'Bennu_2692.obj';        % mesh file
 
 M = SurfaceMesh(meshfile);          % construct surface mesh
 

@@ -7,8 +7,7 @@ To access the classes and functions of GaMA, add the directory tree to the run p
 ```
 addpath(genpath('/path/to/GaMA')) 
 ```
-
-A number of example scripts highlight different functionality within the code and can be found in the Examples subdirectory. Included is a [script](Examples/GravityModels/TrajectoryIntegration.m) that integrates a trajectory around Asteroid Eros and is a good starting point. Another [script](Examples/GravityModels/ErosSurfaceSlopes.m) shows how to calculate the gravity slopes on the surface of Eros and export the results to a vtk file for viewing with Paraview or Visit.
+A number of example scripts highlight different functionality within the code and can be found in the Examples subdirectory. Included is a [script](scripts/Examples/GravityModels/TrajectoryIntegration.m) that integrates a trajectory around Asteroid Eros and is a good starting point. Another [script](scripts/Examples/GravityModels/ErosSurfaceSlopes.m) shows how to calculate the gravity slopes on the surface of Eros and export the results to a vtk file for viewing with Paraview or Visit.
 
 ![Eros Slopes](ErosSlopes.png)
 

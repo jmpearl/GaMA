@@ -4,8 +4,8 @@ classdef MasconModel < handle
 %
     properties(GetAccess=public)
         mu;          % G x mass of mascon
-        coordinates;   % coordinates of mascons
-        
+        coordinates; % coordinates of mascons
+        res;         % lengthscale used to prevent singularities
         numElements  % number of computational elements
     end    
     methods
@@ -39,13 +39,12 @@ classdef MasconModel < handle
                 if strcmp(distributionType,'simplePacking')
                     
                     ds = (mesh.volume/numMascons)^(1/3);
-                    obj = obj.initializeSimplePacking( mesh, ds, Mu);
-                    obj.mu = Mu*ones(size(obj.coordinates,1),1)/size(obj.coordinates,1);
+                    obj.initializeSimplePacking( mesh, ds, Mu);
                     
                 elseif strcmp(distributionType,'extendedTetrahedra')
                     
                     numLayers = max(1, round(numMascons/mesh.numFaces));
-                    obj = obj.initializeExtendedTetrahedra(mesh,numLayers,Mu);
+                    obj.initializeExtendedTetrahedra(mesh,numLayers,Mu);
                     
                 else
                     
@@ -90,7 +89,8 @@ classdef MasconModel < handle
                     error('that aint right')
 
             end
-
+           
+            obj.calculateResolution(vol);
             obj.coordinates = cm;
             obj.mu = vol/sum(vol)*Mu;
             obj.numElements = size(cm,1);
@@ -145,9 +145,12 @@ classdef MasconModel < handle
             
             % package as Nx3 matrix
             obj.coordinates = candidates(isKeeper>0.5,:);
-            obj.mu = Mu/size(obj.coordinates,1);
+            obj.mu = Mu*ones(size(obj.coordinates,1),1)/size(obj.coordinates,1);
             obj.numElements = size(obj.mu,1);
-            
+
+            % get our resolution
+            volumes = ones(obj.numElements,1)/obj.numElements*mesh.volume;
+            obj.calculateResolution(volumes);
         end
         function initializeExtendedTetrahedra(obj, mesh, numLayers, Mu)
         % Mascons distribution technique of Chanut et al. 2015
@@ -235,8 +238,14 @@ classdef MasconModel < handle
             volumes(i1:i2,1) = abs(dot((p1),cross(p2,p3,2),2)/6);
             obj.mu = Mu*volumes/sum(volumes);
             obj.numElements = size(obj.mu,1);
+
+            % get our resolution
+            obj.calculateResolution(volumes);
         end
-        
+        function calculateResolution(obj,volumes)
+            obj.res = 0.5*volumes.^(1/3);
+        end
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------
@@ -274,7 +283,7 @@ classdef MasconModel < handle
             for i = 1:size(p,1)
                 
                 r = obj.coordinates-p(i,:);
-                rinv3 = 1./(r(:,1).^2+r(:,2).^2+r(:,3).^2).^(3/2);
+                rinv3 = 1./max(r(:,1).^2+r(:,2).^2+r(:,3).^2,obj.res).^(3/2);
                 
                 acceleration(i,1:3) = (obj.mu.*rinv3)'*r;
                 

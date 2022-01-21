@@ -693,7 +693,6 @@ classdef VolumeMesh < handle
 
                 end
                 delta(obj.isBoundaryNode==1,:) = 0;
-                max(vecnorm(delta,2,2))
                 obj.coordinates = obj.coordinates + delta./wsum;
             end
         end

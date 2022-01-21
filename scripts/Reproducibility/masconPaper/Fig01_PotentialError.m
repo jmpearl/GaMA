@@ -22,8 +22,8 @@ numAltitudes = 5;
 altitudes = logspace(-1,4,numAltitudes);
 
 % meshes
-numFacesCoarse    =  2100;  % coarsest test mesh
-numMascons        = 10000;  % number of mascons
+numFacesCoarse    =  5000;  % coarsest test mesh
+numMascons        =  5000;  % number of mascons
 numFacesTruthMesh = 50000;  % reference mesh
 
 % degrees of quad rules
@@ -48,8 +48,8 @@ meshCoarse.setNumFaces(numFacesCoarse);   % coarsen to
 
 volMesh = VolumeMesh(meshCoarse);
 volMesh.initializeFromSimpleLattice(numMascons);
-%volMesh.smooth()
-volMesh.writeVTK('VTK.vtk')
+volMesh.smooth(5)
+
 
 % Gravity Models
 %-------------------------------------------------------------------------
@@ -60,6 +60,24 @@ masconModel{1} = MasconModel(meshCoarse,Mu,numMascons);
 masconModel{2} = MasconModel();
 masconModel{2}.initializeFromVolumeMesh(volMesh,Mu,'vertex');
 
+volMesh.setDegree(2);
+volMesh.curve(mesh);
+masconModel{3} = MasconModel();
+masconModel{3}.initializeFromVolumeMesh(volMesh,Mu,'vertex');
+masconModel{4} = MasconModel();
+masconModel{4}.initializeFromVolumeMesh(volMesh,Mu,'cell');
+masconModel{5} = MasconModel();
+masconModel{5}.initializeFromVolumeMesh(volMesh,Mu,'node');
+
+sm = SurfaceMesh(meshCoarse);
+volMesh2 = VolumeMesh(sm);
+volMesh2.initializeFromOctree(1000,2,2);
+volMesh2.smooth(5);
+volMesh2.setDegree(2);
+volMesh2.curve(mesh);
+masconModel{6} = MasconModel();
+masconModel{6}.initializeFromVolumeMesh(volMesh2,Mu,'vertex');
+
 figure(1)
 hold on 
 plot3(meshCoarse.coordinates(:,1),...
@@ -69,6 +87,7 @@ plot3(masconModel{2}.coordinates(:,1),...
       masconModel{2}.coordinates(:,2),...
       masconModel{2}.coordinates(:,3),'ro')
 daspect([1,1,1])
+
 % Acceleration and Error
 %--------------------------------------------------------------------------
 % create dummy mesh for our constant altitude surfaces

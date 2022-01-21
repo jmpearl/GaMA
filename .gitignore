@@ -6,14 +6,4 @@
 
 myaa.m
 
-Mesh/OldFiles/
-Mesh/TestVolumeMesh.m
-
-TESTSCRIPT.m
-
-Utilities/a_file.m
-Utilities/convertQuadPy.py
-Utilities/convertQuadPyWedge.py
-Utilities/convertQuadrature2MatFile.m
-Utilities/quadratureRuleCorrectWOrientation.m
 

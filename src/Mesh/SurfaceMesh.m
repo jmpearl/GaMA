@@ -1027,7 +1027,7 @@ classdef SurfaceMesh < handle
             else
                 
                 % quadrature rule for unit triangle (Nix1)
-                d = 3*obj.degree - 2;
+                d = 3*obj.degree - 1;
                 [u,v,w] = NewtonCotesTriangle(d);
                 
                 % Ng interpolants/derivatives at Ni quadrature points (NixNg)
@@ -1165,8 +1165,8 @@ classdef SurfaceMesh < handle
             
             % Rectilinear Meshes
             if ~obj.isCurved
-                vf = 1/3*dot(obj.nodeAreaVectors(),obj.coordinates,2);
-                cf = 3/4*vf'*obj.coordinates;
+                vf = dot(obj.nodeAreaVectors(),obj.coordinates,2);
+                cf = 0.25*vf'*obj.coordinates;
                 centroid = cf/sum(vf);
                 
             % Curvilinear Meshes

@@ -33,22 +33,18 @@ meshP1 = SurfaceMesh(mesh);       % copy construct
 meshP1.setNumFaces(8000);         % coursen to 8000 faces
 meshP1.smooth(1);                 % smooth 1 iteration
 meshP1.projectOnTo(mesh);         % project back onto mesh
-meshP1.center();                  % move centroid to (0,0,0)
 
 meshP2 = SurfaceMesh(meshP1);     % copy construct
 meshP2.setDegree(2);              % 2nd order faces
 meshP2.curve(mesh);               % curve through projection
-meshP2.center();                  % move centroid to (0,0,0)
 
 meshP3 = SurfaceMesh(meshP1);
 meshP3.setDegree(3);
 meshP3.curve(mesh);
-meshP3.center();
 
 meshP4 = SurfaceMesh(meshP1);
 meshP4.setDegree(4);
 meshP4.curve(mesh);
-meshP4.center();
 
 % set up the gravity models
 %--------------------------------------------------------------------------
@@ -64,10 +60,14 @@ gravityModel{6} = ApproximatePolyhedralModel(meshP4,Mu); % P4 - 8000-faces
 %--------------------------------------------------------------------------
 
 % initial conditions
-Ro = 45000;                 % initial radius
-Vcirc = sqrt(Mu/Ro);        % initially circular
-Xo = [Ro,0,0,-Vcirc,0,0];   % I.C.s [rx,vx,ry,vy,rz,vz]
-tol = 1e-6;                 % integration tolerances
+Ro = 45000;                                  % initial radius
+Vcirc = sqrt(Mu/Ro);                         % for calc initial energy
+xo = [0,Ro,0];                               % iinitial position
+vo = [-Vcirc,0,0];                           % initial velocity
+Xo = [xo(1),vo(1),xo(2),vo(2),xo(3),vo(3)];  % initial state
+%Uo = gravityModel{1}.potential(xo);          % initial potential {1}
+%Eo = Vcirc^2/2.0 + Uo;                       % initial energy
+
 
 % time period
 nPeriods = 1000;
@@ -77,6 +77,7 @@ T = [0,nPeriods*Tperiod];
 t_interp = linspace(T(1),T(2),nPeriods*nSamplesPeriod);
 
 % integrator
+tol = 1e-8;
 odeOptions = odeset('RelTol',tol,'AbsTol',[tol tol tol tol tol tol]);
 integrator = Integrator(gravityModel{1},@ode45);
 integrator = integrator.setOdeOptions(odeOptions);
@@ -87,6 +88,11 @@ for i =1:length(gravityModel)
     
     integrator.gravityModel = gravityModel{i};         % reset 2 next model
     
+    % uncomment for equal energy as an initial condition
+    %Ui = gravityModel{i}.potential([Xo(1),Xo(3),Xo(5)]);
+    %initialVelocity = sqrt(2.0*(Eo-Ui))
+    %Xo(2) = initialVelocity;
+
     tic
     [tout{i},xout{i}] = integrator.integrate(T,Xo);    % integrate
     toc
@@ -176,7 +182,7 @@ set(gcf,'Color',[1,1,1]);
 set(gca,'FontSize',FS)
 set(gca,'TickLabelInterpreter','latex')
 box on
-legend({'Analytic-46906','Analytic-8000','P1-8000','P2-8000','P3-8000','P4-8000'},'interpreter','latex')
+legend({'Analytic-46906','Analytic-7996','P1-7996','P2-7996','P3-7996','P4-7996'},'interpreter','latex')
 legend boxoff
 
 
@@ -190,12 +196,12 @@ plot(t_interp,errorE{3},'b--','LineWidth',LW)
 plot(t_interp,errorE{4},'r:','LineWidth',LW)
 plot(t_interp,errorE{5},'y-.','Color',[YC1,YC2,0],'LineWidth',LW)
 box on
-axis([1,1000,10^-4,1])
+%axis([1,1000,10^-4,1])
 xlabel('time (periods)','interpreter','latex'); 
 ylabel('energy error ($\%$)','interpreter','latex'); 
 set(gcf,'Color',[1,1,1]);
 set(gca,'yscale','log');set(gca,'xscale','log');
-legend({'Analytic-8000','P1-8000','P2-8000','P3-8000','P4-8000'},'interpreter','latex','location','NorthWest')
+legend({'Analytic-7996','P1-7996','P2-7996','P3-7996','P4-7996'},'interpreter','latex','location','NorthWest')
 legend boxoff 
 set(gca,'FontSize',FS)
 set(gca,'TickLabelInterpreter','latex')
@@ -213,12 +219,13 @@ xlabel('time (periods)','interpreter','latex');
 ylabel('position error ($\%$ of orbital radius)','interpreter','latex'); 
 set(gcf,'Color',[1,1,1]);
 set(gca,'yscale','log');set(gca,'xscale','log');
-axis([1,1000,10^-3,200])
-legend({'Analytic-8000','P1-8000','P2-8000','P3-8000','P4-8000'},'interpreter','latex','location','NorthWest')
+%axis([1,1000,10^-3,200])
+legend({'Analytic-7996','P1-7996','P2-7996','P3-7996','P4-7996'},'interpreter','latex','location','NorthWest')
+legend boxoff 
 set(gca,'FontSize',FS)
 set(gca,'TickLabelInterpreter','latex')
 box on
-legend boxoff
+
 
 
 

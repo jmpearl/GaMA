@@ -62,7 +62,8 @@ classdef MasconModel < handle
         % Inputs:
         %   volumeMesh ------- initialize volume mesh object
         %   Mu --------------- standard gravitational parameter
-        %   quadratureMethod - 'nodes', 'cells','vertices'
+        %   quadratureMethod - 'nodes', 'cells','vertices',
+        %                      'excludeSurfaceNodes'
         %   centerOfMass ----- true/false quads at COMs?
         %------------------------------------------------------------------
         
@@ -71,9 +72,11 @@ classdef MasconModel < handle
             assert(nargin >= 3, 'requires VolumeMesh and stand grav param as inputs');
             assert(isa(volumeMesh,"VolumeMesh"),"first input must be VolumeMesh")
             assert(isnumeric(Mu),"Second inputqm stand grav param must be number")
+            
+            quadratureMethod = lower(quadratureMethod);
             if nargin == 4
-                assert(any(strcmpi(quadratureMethod,{'vertex','node','cell'})), ...
-                       "valid quadrature methods 'vertex' 'node' 'cell'")
+                assert(any(strcmpi(quadratureMethod,{'vertex','node','cell','excludesurface'})), ...
+                       "valid quadrature methods 'vertex' 'node' 'cell' 'excludesurface")
             else
                 quadratureMethod = 'vertex';
             end
@@ -85,6 +88,8 @@ classdef MasconModel < handle
                     [cm,vol] = volumeMesh.cellCentroids();
                 case 'node'
                     [cm,vol] = volumeMesh.nodeCentroids();
+                case 'excludesurface'
+                    [cm,vol] = volumeMesh.vertexCentroidsExcludingBoundaries();
                 otherwise
                     error('that aint right')
 
@@ -140,6 +145,9 @@ classdef MasconModel < handle
             [X,Y,Z] = meshgrid(x,y,z);
             candidates = [X(:),Y(:),Z(:)];
             
+            %insetMesh = mesh.offsetSurfaceMesh(-mesh.resolution/2.0, ...
+            %                                    mesh.numVertices);
+          
             % Only keep mascons located within the body
             isKeeper = mesh.isInside(candidates);
             
@@ -283,7 +291,7 @@ classdef MasconModel < handle
             for i = 1:size(p,1)
                 
                 r = obj.coordinates-p(i,:);
-                rinv3 = 1./max(r(:,1).^2+r(:,2).^2+r(:,3).^2,obj.res).^(3/2);
+                rinv3 = 1./(r(:,1).^2+r(:,2).^2+r(:,3).^2).^(3/2);
                 
                 acceleration(i,1:3) = (obj.mu.*rinv3)'*r;
                 

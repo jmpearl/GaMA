@@ -76,6 +76,7 @@ classdef VolumeMesh < handle
             if nargin == 1
                 if isa(mesh,'SurfaceMesh')
                     obj.surfaceMesh=mesh;
+                    obj.surfaceMesh.flatten();
                 elseif isa(mesh,'VolumeMesh')
                     obj.copy(mesh);
                 end
@@ -138,13 +139,13 @@ classdef VolumeMesh < handle
         end
 
         function set.surfaceMesh(obj,surfaceMesh)
-        % set method for the internal surface mesh reference
+        % set method for the internal surface mesh used to force copy
         %------------------------------------------------------------------
         % Inputs:
         %   surfaceMesh -- SurfaceMesh object
         %------------------------------------------------------------------
             if isa(surfaceMesh,"SurfaceMesh")
-                obj.surfaceMesh=surfaceMesh;
+                obj.surfaceMesh=SurfaceMesh(surfaceMesh); 
                 obj.hasSurfaceMesh = true;
             elseif isempty(surfaceMesh)
                 obj.surfaceMesh=[];
@@ -227,7 +228,8 @@ classdef VolumeMesh < handle
             [X,Y,Z] = meshgrid(x,y,z);
 
             % create a buffer 
-            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
+            offsetDistance = obj.surfaceMesh.resolution/2.0;
+            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-offsetDistance, ...
                                                                   obj.surfaceMesh.numVertices);
             % clip to internal
             candidates = [X(:),Y(:),Z(:)];
@@ -265,7 +267,7 @@ classdef VolumeMesh < handle
 
             % get the grid
             [X,Y,Z] = meshgrid(x,y,z);
-            candidates = PointCloud.createBCCLattice(numVertices);
+            
             % create a buffer 
             insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
                                                                   obj.surfaceMesh.numVertices);
@@ -321,11 +323,12 @@ classdef VolumeMesh < handle
 
             obj.initializeFromPointCloud(candidates,'internal');
         end
-        function initializeFromSurfaceIteration(obj,ratio)
+        function initializeFromSurfaceIteration(obj,ratio,numVerticesInitial)
         % initialize volume mesh by iteratively offseting the surface 
         %------------------------------------------------------------------
         % Inputs:
-        %   ratio --- ratio numVertices 
+        %   ratio -------------- ratio numVertices 
+        %   numVerticesInitial - 
         %------------------------------------------------------------------
 
             %assert (obj.hasSurfaceMesh==1) "no surface mesh loaded"
@@ -340,19 +343,33 @@ classdef VolumeMesh < handle
             tempMesh.coarsenOptions.reproject=false;
             tempMesh.coarsenOptions.method = 'uniform';
             tempMesh.smoothOptions.reproject=false;
-
+            
+            if nargin == 3 && (numVerticesInitial < ratio*obj.surfaceMesh.numVertices)
+                tempMesh.setNumVertices(numVerticesInitial);
+            end
             % add the origin
             newCoordinates = [0,0,0];
 
-            
+            i=1;
+            depth = 0.0;
+            maxDepth = 0.9*min(vecnorm(obj.surfaceMesh.coordinates));
+
             % offset the surface mesh inward coarsening along the way
             while tempMesh.volume > 0.1*obj.surfaceMesh.volume
-
+                tempMesh.writeVTK(['tempMesh',num2str(i),'.vtk'])
+                i=i+1;
                 % reduce vertex count 
                 newVertexCount = round(tempMesh.numVertices*ratio);
-                tempMesh.setNumVertices(newVertexCount);
+                
+                % this should really be fixed later
+                try
+                    tempMesh.setNumVertices(newVertexCount);
+                catch
+                    break
+                end
 
                 % offset mesh
+                depth = depth + tempMesh.resolution;
                 tempMesh = tempMesh.offsetSurfaceMesh(-tempMesh.resolution);
 
                 % we don't want to reproject things
@@ -361,11 +378,12 @@ classdef VolumeMesh < handle
                 tempMesh.smoothOptions.reproject=false;
 
                 % smooth it out 
-                tempMesh.smooth(10,'cotan',false);
+                tempMesh.smooth(12,'cotan',false);
 
                 % prevent slivers meshes
-                if tempMesh.volume< 0.05*obj.surfaceMesh.volume ||...
-                   obj.surfaceMesh.numFaces<100
+                if tempMesh.volume< 0.15*obj.surfaceMesh.volume ||...
+                   tempMesh.numFaces<100 ||...
+                   depth + tempMesh.resolution > maxDepth
                     break
                 end
 
@@ -658,6 +676,7 @@ classdef VolumeMesh < handle
         %------------------------------------------------------------------
         % numIterations --- number of smoothing iterations
         %------------------------------------------------------------------
+            assert(obj.degree==1,"only implemented for degree-1 meshes");
 
             if nargin == 1
                 numIterations = 1;
@@ -824,6 +843,19 @@ classdef VolumeMesh < handle
             
         end
         
+        function [indices] = localVertexIndices(obj)
+        % local indices of vertices from cell nodes
+        %------------------------------------------------------------------
+        % Outputs:
+        %   indices -- 4 local indices 
+        %------------------------------------------------------------------
+            switch obj.degree
+                case 1
+                    indices = [1,2,3,4];
+                case 2
+                    indices = [1,3,6,10];
+            end
+        end
         function [vertices] = cellVertices(obj)
         % gets the vertices for the given cell
         %------------------------------------------------------------------
@@ -831,16 +863,45 @@ classdef VolumeMesh < handle
         % geometric nodes. This function with separate them out.
         %------------------------------------------------------------------
 
-            switch obj.degree
-                case 1
-                    vertices = obj.cells;
-                case 2
-                    vertices = [obj.cells(:,1),...
-                                obj.cells(:,3),...
-                                obj.cells(:,6),...
-                                obj.cells(:,10)];
+            indices = obj.localVertexIndices();
+            vertices = obj.cells(:,indices);
+
+        end
+        function [neighbors] = vertexNeighbors(obj)
+        % get our unique vertices neighbors
+        %------------------------------------------------------------------
+        % Output
+        %   nieghbors --- cell array of neighbor indices
+        %------------------------------------------------------------------
+            
+            vertices = obj.cellVertices();
+            neighbors = cell(obj.numVertices,1);
+
+            % load in our local neighbors
+            for i = 1:obj.numCells
+                pi = vertices(i,:);
+                neighbors{pi(1,1)} = [neighbors{pi(1,1)},pi(1,[2,3,4])];
+                neighbors{pi(1,2)} = [neighbors{pi(1,2)},pi(1,[1,3,4])];
+                neighbors{pi(1,3)} = [neighbors{pi(1,3)},pi(1,[2,1,4])];
+                neighbors{pi(1,4)} = [neighbors{pi(1,4)},pi(1,[2,3,1])];
             end
 
+            % get unique global neighbors
+            for i = 1:obj.numVertices
+                neighbors{i}=unique(neighbors{i});
+            end
+        end
+        function [boolOutput] = isBoundaryVertex(obj)
+        % get our unique vertices neighbors
+        %------------------------------------------------------------------
+        % Output
+        %   boolOutput --- boolean array for vertices
+        %------------------------------------------------------------------
+
+            % boundary vertices are first in our ordering convention
+            boolOutput = obj.isBoundaryNode;
+            boolOutput(obj.numBoundaryVertices+1:end,:)=0;
+            
         end
 
         function [centroids,volumes] = cellCentroids(obj)
@@ -848,6 +909,7 @@ classdef VolumeMesh < handle
         %------------------------------------------------------------------
         % Outputs:
         %   centroids - coordinates of centroids
+        %   volumes --- volumes of each cell
         %------------------------------------------------------------------
             if ~obj.isCurved
                 p1 = obj.coordinates(obj.cells(:,1),:);
@@ -855,6 +917,7 @@ classdef VolumeMesh < handle
                 p3 = obj.coordinates(obj.cells(:,3),:); 
                 p4 = obj.coordinates(obj.cells(:,4),:); 
                 centroids=1/4*(p1+p2+p3+p4); 
+                volumes = obj.cellVolumes();
             else
                 % high degree quadrature rule (Nix1)
                 quadratureOrder = 6;
@@ -1106,6 +1169,53 @@ classdef VolumeMesh < handle
                 volumes = volumes/6.0;
             end
         end
+        function [centroids,volumes] = vertexCentroidsExcludingBoundaries(obj)
+        % calculated vertex centroid and vol, lump bc values into interior
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids --- centroids of interior verices
+        %   volumes ----- volumes of interior vertices
+        %------------------------------------------------------------------
+
+            [c,v] = obj.vertexCentroids();
+
+            firstMoment = c.*v;
+            zerothMoment = v;
+            
+            deltaFirstMoment = zeros(obj.numVertices,3);
+            deltaZerothMoment = zeros(obj.numVertices,1);
+
+            neighbors = obj.vertexNeighbors();
+
+            isBCvertex = obj.isBoundaryVertex();
+
+            % dump volume/first moment into neighbors if BC node
+            for i = 1:obj.numVertices
+
+                if isBCvertex(i)
+
+                    neighborsi = neighbors{i};
+                    
+                    weights = zerothMoment(neighborsi,:);
+                    weights(isBCvertex(neighborsi)==1)=0;
+                    weights = weights./sum(weights);
+
+                    deltaFirstMoment(neighborsi,:) = deltaFirstMoment(neighborsi,:)...
+                                                   + weights.*firstMoment(i,:);
+                    deltaZerothMoment(neighborsi,:) = deltaZerothMoment(neighborsi,:)...
+                                                    + weights.*zerothMoment(i,:);      
+
+                end
+            end
+
+            firstMoment = firstMoment + deltaFirstMoment;
+            zerothMoment = zerothMoment + deltaZerothMoment;
+            zerothMoment(isBCvertex==1,:) = [];
+            firstMoment(isBCvertex==1,:) = [];
+
+            centroids = firstMoment./zerothMoment;
+            volumes = zerothMoment;
+        end
         function volumes = cellVolumes(obj)
         % centroids of cells
         %------------------------------------------------------------------
@@ -1286,7 +1396,7 @@ classdef VolumeMesh < handle
                 volumes = volumes/6.0;
             end
         end
-        
+
         function volume = calculateVolume(obj)
         % volume contained in mesh
         %------------------------------------------------------------------

@@ -4,7 +4,7 @@
 % Model for Comets and Asteroids using Curvilinear Surface Definitions"
 % MNRAS, 2022 (submitted).
 %
-% ** Note GaMA is under development small variations from published 
+% ** Note GaMA is under development small variations from published
 % ** results may occur.
 %
 % plots acceleration error of quadrature and analytic models as a function
@@ -17,18 +17,21 @@ clear all; clc; close all;
 %--------------------------------------------------------------------------
 % meshes
 numFacesSampleMesh = 20000;
-numFacesCoarse = round(logspace(2,4.3,15));  % coarsest test mesh
-numRefinements = length(numFacesCoarse);
+numRefinements = 15;
+numFacesCoarse = round(logspace(2,4.3,numRefinements));  % coarsest test mesh
+
+numAltitudes = 10;
+altitudes = logspace(1.2460,4.2460,numAltitudes);
 
 % body parameters
 %--------------------------------------------------------------------------
 G = 6.67*10^-11;                       % gravitational constant (N m2/kg2)
-load('Eros.mat');                      % load stored Eros properties                                  
+load('Eros.mat');                      % load stored Eros properties
 Mu = bodyProperties.mass*G;            % set stand grav parameter
 
-% meshes 
+% meshes
 %--------------------------------------------------------------------------
-meshfile = 'Eros_46906.obj';           % mesh file to load 
+meshfile = 'Eros_46906.obj';           % mesh file to load
 mesh = SurfaceMesh(meshfile);          % create the surface mesh object
 
 meshSample = SurfaceMesh(mesh);
@@ -36,114 +39,70 @@ meshSample.setNumFaces(numFacesSampleMesh)
 
 truthGravityModel = AnalyticPolyhedralModel(mesh,Mu);
 
-pts = meshSample.coordinates;
-tic
-accOriginal = truthGravityModel.acceleration(pts);
-toc
-accOgMag = vecnorm(accOriginal,2,2);
+% data sets and truth accelerations
+%--------------------------------------------------------------------------
+for j = 1:numAltitudes
+    if j == 1
+        pts{j} = meshSample.coordinates;
+    else
+        pts{j} = meshSample.offsetSurfaceMesh(altitudes(j),numFacesSampleMesh);
+    end
+    tic;
+    accOriginal{j} = truthGravityModel.acceleration(pts); toc
+    accOgMag{j} = vecnorm(accOriginal,2,2);
+    numSamplesActual(j) = size(pts,1);
+end
 
 
+% do the dead
+%--------------------------------------------------------------------------
 for i = 1:numRefinements
 
-    Ni = numFacesCoarse(i);  % number of mascons
+    % set up our models
+    %----------------------------------------------------------------------
+    Ni = numFacesCoarse(i);            % number of mascons/faces
+    meshCoarse = SurfaceMesh(mesh);    % copy  construct
+    meshCoarse.setNumFaces(Ni);        % coarsen to
 
-
-    % initialize our course mesh we'll manipulate
-    meshCoarse = SurfaceMesh(mesh);           % copy  construct
-    meshCoarse.setNumFaces(Ni);   % coarsen to
-
-    insetSurfaceMesh = meshCoarse.offsetSurfaceMesh(-meshCoarse.resolution/2, ...
-                                                     meshCoarse.numVertices);
-
-    vmCoarse = VolumeMesh(meshCoarse);
-    vmCoarse.initializeFromSimpleLattice(Ni-meshCoarse.numVertices);
-    vmCoarse.smooth(5)
-
-    vmFine = VolumeMesh(mesh);
-    vmFine.initializeFromSimpleLattice(Ni);
-    vmFine.smooth(5);
-
-    vmOctreeDegree2 = VolumeMesh(mesh);
-    vmOctreeDegree2.initializeFromOctree(round(Ni/4.0),2,2);
-    vmOctreeDegree2.smooth(5);
-    vmOctreeDegree2.setDegree(2);
-    vmOctreeDegree2.curve(mesh);
-
-    vmIter = VolumeMesh(meshCoarse);
-    vmIter.initializeFromSurfaceIteration(1/2);
-    vmIter.smooth(2)
-    vmIter.setDegree(2);
-    vmIter.curve(mesh);
-
-    vmIter2 = VolumeMesh(meshCoarse);
-    vmIter2.initializeFromSurfaceIteration(1/3);
-    vmIter2.smooth(2)
-    vmIter2.setDegree(2);
-    vmIter2.curve(mesh);
-
-    vmIter4 = VolumeMesh(mesh);
-    vmIter4.initializeFromSurfaceIteration(1/2,meshCoarse.numVertices);
-    vmIter4.smooth(2)
-
-    % Gravity Models
-    %-------------------------------------------------------------------------
-    % polyhedral test mesh
     polyhedralModel = AnalyticPolyhedralModel(meshCoarse,Mu);
 
-    % mascon - packing
-    masconModel{1} = MasconModel(insetSurfaceMesh,Mu,Ni);
+    % storage function for use across scripts (outputs struct)
+    masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni);
 
-    % mascon - volume mesh P1 vertex quads
-    masconModel{2} = MasconModel();
-    masconModel{2}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
+    % get our data points
+    %----------------------------------------------------------------------
+    for k = 1:numAltitudes
 
-    % mascon - volume mesh P2 mesh vertex quad
-    vmCoarse.setDegree(2);
-    vmCoarse.curve(mesh);
-    masconModel{3} = MasconModel();
-    masconModel{3}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
-    masconModel{4} = MasconModel();
-    masconModel{4}.initializeFromVolumeMesh(vmCoarse,Mu,'cell');
-    masconModel{5} = MasconModel();
-    masconModel{5}.initializeFromVolumeMesh(vmCoarse,Mu,'node');
-
-    % mascon - degree 2 octree vertex quad
-    masconModel{6} = MasconModel();
-    masconModel{6}.initializeFromVolumeMesh(vmOctreeDegree2,Mu,'excludesurface');
-
-    % based on true mesh excluding surface points
-    masconModel{7} = MasconModel();
-    masconModel{7}.initializeFromVolumeMesh(vmFine,Mu,'excludesurface');
-
-    % based on true mesh excluding surface points
-    masconModel{8} = MasconModel();
-    masconModel{8}.initializeFromVolumeMesh(vmIter,Mu,'excludesurface');
-
-    masconModel{9} = MasconModel();
-    masconModel{9}.initializeFromVolumeMesh(vmIter2,Mu,'excludesurface');
-
-    masconModel{10} = MasconModel();
-    masconModel{10}.initializeFromVolumeMesh(vmIter4,Mu,'excludesurface');
-
-    % Acceleration and Error
-    %--------------------------------------------------------------------------
-    tic
-    accTempPoly = polyhedralModel.acceleration(pts);
-    time(i,1)=toc
-    numElements(i,1)=meshCoarse.numFaces;
-    % loop through each mesh resolution calculating the error
-    error(i,1) = 100*mean(vecnorm((accTempPoly - accOriginal),2,2)./accOgMag);
-    maxerror(i,1) = 100*max(vecnorm((accTempPoly - accOriginal),2,2)./accOgMag);
-
-    for j=1:length(masconModel)
-        [i,j]
+        % Acceleration coarse polyhedral model
+        %------------------------------------------------------------------
         tic
-        accTemp = masconModel{j}.acceleration(pts);
-        time(i,j+1)=toc
-        numElements(i,j+1)=masconModel{j}.numElements;
-        error(i,j+1) = 100*mean(vecnorm((accTemp - accOriginal),2,2)./accOgMag);
-        maxerror(i,j+1) = 100*max(vecnorm((accTemp - accOriginal),2,2)./accOgMag);
+        accTempPoly = polyhedralModel.acceleration(pts{k});
+        time{k}(i,1)=toc
+        numElements{k}(i,1)=meshCoarse.numFaces;
 
+        % polyhedral model error norms
+        L1{k}(i,1) = 100*mean(vecnorm((accTempPoly - accOriginal{k}),2,2)./accOgMag{k});
+        L2{k}(i,1) = 100/numSamplesActual(k)*sqrt(sum((vecnorm((accTempPoly - accOriginal{k}),2,2)./accOgMag{k}).^2));
+        Linf{k}(i,1) = 100*max(vecnorm((accTempPoly - accOriginal{k}),2,2)./accOgMag{k});
+
+        % mascon models
+        %------------------------------------------------------------------
+        for j=1:length(masconModel)
+            [i,k,j]
+
+            % mascon model acceleration
+            tic
+            accTemp = masconModel{j}.acceleration(pts{k});
+            time{k}(i,j+1)=toc
+
+            numElements{k}(i,j+1)=masconModel{j}.numElements;
+
+            % mascon model error norms
+            L1{k}(i,j+1) = 100*mean(vecnorm((accTemp - accOriginal{k}),2,2)./accOgMag{k});
+            L2{k}(i,j+1) = 100/numSamplesActual(k)*sqrt(sum((vecnorm((accTemp - accOriginal{k}),2,2)./accOgMag{k}).^2));
+            Linf{k}(i,j+1) = 100*max(vecnorm((accTemp - accOriginal{k}),2,2)./accOgMag{k});
+
+        end
     end
 
 end

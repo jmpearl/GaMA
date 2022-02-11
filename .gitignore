@@ -2,6 +2,10 @@
 *.asv
 *.py
 *.png
+*.tif
+*.tiff
+*.jpg
+*.jpeg
 !ErosSlopes.png
 
 myaa.m

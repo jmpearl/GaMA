@@ -18,23 +18,19 @@ clear all; clc; close all;
 % constant altitude surface parameters
 numPointsCAS = 500;       % number of points on CAS
 numPointsBaseCAS = 4000;  % number of points on origin mesh
-numAltitudes = 5;
-altitudes = logspace(-1,4,numAltitudes);
+numAltitudes = 20;
+altitudes = logspace(-1,2,numAltitudes);
 
 % meshes
 numFacesCoarse    =  5000;  % coarsest test mesh
-numMascons        =  5000;  % number of mascons
+numMascons        =  2500;  % number of mascons
 numFacesTruthMesh = 50000;  % reference mesh
-
-% degrees of quad rules
-%quadRules = [1,2,3,4];   % mesh degrees we'll test
 
 % body parameters
 %--------------------------------------------------------------------------
 G = 6.67*10^-11;                       % gravitational constant (N m2/kg2)
 load('Eros.mat');                      % load stored Eros properties                                  
 Mu = bodyProperties.mass*G;            % set stand grav parameter
-Omega = bodyProperties.rotationRate;   % 
 
 % meshes 
 %--------------------------------------------------------------------------
@@ -46,61 +42,67 @@ mesh.setNumFaces(numFacesTruthMesh);
 meshCoarse = SurfaceMesh(mesh);           % copy  construct
 meshCoarse.setNumFaces(numFacesCoarse);   % coarsen to
 
-volMesh = VolumeMesh(meshCoarse);
-volMesh.initializeFromSimpleLattice(numMascons);
-volMesh.smooth(5)
+insetSurfaceMesh = meshCoarse.offsetSurfaceMesh(-meshCoarse.resolution/2, ...
+                                                 meshCoarse.numVertices);
 
+meshCAS = SurfaceMesh(mesh);
+meshCAS.coarsen(numPointsBaseCAS);
+
+vmCoarse = VolumeMesh(meshCoarse);
+vmCoarse.initializeFromSimpleLattice(numMascons);
+vmCoarse.smooth(5)
+
+vmFine = VolumeMesh(mesh);
+vmFine.initializeFromSimpleLattice(numFacesCoarse);
+vmFine.smooth(5);
+
+vmOctreeDegree2 = VolumeMesh(meshCoarse);
+vmOctreeDegree2.initializeFromOctree(200,2,2);
+vmOctreeDegree2.smooth(5);
+vmOctreeDegree2.setDegree(2);
+vmOctreeDegree2.curve(mesh);
 
 % Gravity Models
 %-------------------------------------------------------------------------
+
+% polyhedral truth
 truthGravityModel = AnalyticPolyhedralModel(mesh,Mu);
 
+% polyhedral test mesh
 polyhedralModel{1} = AnalyticPolyhedralModel(meshCoarse,Mu);
-masconModel{1} = MasconModel(meshCoarse,Mu,numMascons);
+
+% mascon - packing
+masconModel{1} = MasconModel(insetSurfaceMesh,Mu,numFacesCoarse);
+
+% mascon - volume mesh rectilinear d1 quad
 masconModel{2} = MasconModel();
-masconModel{2}.initializeFromVolumeMesh(volMesh,Mu,'vertex');
+masconModel{2}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
 
-volMesh.setDegree(2);
-volMesh.curve(mesh);
+% mascon - volume mesh P2 mesh d1, d1, d2, quad
+vmCoarse.setDegree(2);
+vmCoarse.curve(mesh);
 masconModel{3} = MasconModel();
-masconModel{3}.initializeFromVolumeMesh(volMesh,Mu,'vertex');
+masconModel{3}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
 masconModel{4} = MasconModel();
-masconModel{4}.initializeFromVolumeMesh(volMesh,Mu,'cell');
+masconModel{4}.initializeFromVolumeMesh(vmCoarse,Mu,'cell');
 masconModel{5} = MasconModel();
-masconModel{5}.initializeFromVolumeMesh(volMesh,Mu,'node');
+masconModel{5}.initializeFromVolumeMesh(vmCoarse,Mu,'node');
 
-sm = SurfaceMesh(meshCoarse);
-volMesh2 = VolumeMesh(sm);
-volMesh2.initializeFromOctree(1000,2,2);
-volMesh2.smooth(5);
-volMesh2.setDegree(2);
-volMesh2.curve(mesh);
+% mascon - degree 2 octree
 masconModel{6} = MasconModel();
-masconModel{6}.initializeFromVolumeMesh(volMesh2,Mu,'vertex');
+masconModel{6}.initializeFromVolumeMesh(vmOctreeDegree2,Mu,'vertex');
 
-figure(1)
-hold on 
-plot3(meshCoarse.coordinates(:,1),...
-      meshCoarse.coordinates(:,2),...
-      meshCoarse.coordinates(:,3),'k.')
-plot3(masconModel{2}.coordinates(:,1),...
-      masconModel{2}.coordinates(:,2),...
-      masconModel{2}.coordinates(:,3),'ro')
-daspect([1,1,1])
+% based on true mesh excluding surface points
+masconModel{7} = MasconModel();
+masconModel{7}.initializeFromVolumeMesh(vmFine,Mu,'excludesurface');
 
 % Acceleration and Error
 %--------------------------------------------------------------------------
-% create dummy mesh for our constant altitude surfaces
-meshCoarse = SurfaceMesh(mesh);
-meshCoarse.coarsen(numPointsBaseCAS);
-
 iter = 1;
-%progressMeter = progressbar('loop over altitudes :');
 for i = 1:numAltitudes
-    %progressMeter.update(100*i/numAltitudes)
 
     % get pts on constant alt surface
-    constAltSurface = meshCoarse.offsetSurfaceMesh(altitudes(i)*mesh.resolution, numPointsCAS);
+    constAltSurface = meshCAS.offsetSurfaceMesh(altitudes(i)*mesh.resolution, numPointsCAS);
     pts = constAltSurface.coordinates;
 
     % "true" acceleration
@@ -111,86 +113,43 @@ for i = 1:numAltitudes
     for k = 1:length(polyhedralModel)
         accTempPoly = polyhedralModel{k}.acceleration(pts);
         error(iter,1) = 100*mean(vecnorm((accTempPoly - accOriginal),2,2)./accOgMag);
-        stderror(iter,1) = std(vecnorm((accTempPoly - accOriginal),2,2)./accOgMag);
-        
+        maxerror(iter,1) = 100*max(vecnorm((accTempPoly - accOriginal),2,2)./accOgMag);
+
         for j=1:length(masconModel)
             accTemp = masconModel{j}.acceleration(pts);
-            stderror(iter,j+1) = 100*std(vecnorm((accTemp - accOriginal),2,2)./accOgMag);
-            stdnumError(iter,j+1) = 100*std(vecnorm((accTemp - accTempPoly),2,2)./vecnorm(accTempPoly,2,2));
             error(iter,j+1) = 100*mean(vecnorm((accTemp - accOriginal),2,2)./accOgMag);
-            numError(iter,j+1) = 100*mean(vecnorm((accTemp - accTempPoly),2,2)./vecnorm(accTempPoly,2,2));
-            numNodes(iter,j+1) = masconModel{j}.numElements;
+            maxerror(iter,j+1) = 100*max(vecnorm((accTemp - accOriginal),2,2)./accOgMag);
+
         end
         h(iter) = altitudes(i);
-        %delta(iter) = res(k);
-        %Nf(iter) = numFacesFinest(k);
         iter = iter+1
     end
 end
 
 stop
-%progressMeter.close();
 
-
-% Process Data
-%--------------------------------------------------------------------------
-Nres=length(res);
-
-errorSquareAnalytic = [];
-errorSquareP1 = [];
-errorSquareP2 = [];
-errorSquareP3 = [];
-errorSquareP4 = [];
-
-for i=1:length(altitudes)
-    i1 = Nres*(i-1)+1;
-    i2 = Nres*i;
-
-    errorSquareAnalytic = [errorSquareAnalytic,error(i1:i2,1).*Nf(i1:i2)'];
-    errorSquareP1 = [errorSquareP1,error(i1:i2,2).*Nf(i1:i2)'];
-    errorSquareP2 = [errorSquareP2,error(i1:i2,3).*Nf(i1:i2)'];
-    errorSquareP3 = [errorSquareP3,error(i1:i2,4).*Nf(i1:i2)'];
-    errorSquareP4 = [errorSquareP4,error(i1:i2,5).*Nf(i1:i2)'];
-end
-
-
-% Plot
-%--------------------------------------------------------------------------
-
-% Fig 9
-%-------
-FS=16; LW=1; MS=8
+FS = 12;
+LW = 1;
+MS = 8;
 figure(1)
 hold on
-plot(altitudes'/mesh.resolution,mean(errorSquareP1,1),'ko','MarkerFaceColor','m','lineWidth',LW,"markerSize",MS)
-plot(altitudes'/mesh.resolution,mean(errorSquareP2,1),'k^','MarkerFaceColor','b','lineWidth',LW,"markerSize",MS)
-plot(altitudes'/mesh.resolution,mean(errorSquareP3,1),'ks','MarkerFaceColor','r','lineWidth',LW,"markerSize",MS)
-plot(altitudes'/mesh.resolution,mean(errorSquareP4,1),'kp','MarkerFaceColor','y','lineWidth',LW,"markerSize",MS)
-plot(altitudes'/mesh.resolution,mean(errorSquareAnalytic,1),'kd','MarkerFaceColor','k','lineWidth',LW,"markerSize",MS)
-legend({'P1','P2','P3','P4','Analytic'},'interpreter','latex','FontSize',FS)
-xlabel('$h/\delta_0$','interpreter','latex','FontSize',FS)
-ylabel('$\epsilon\cdot N_f$','interpreter','latex','FontSize',FS)
-set(gcf,'Color',[1,1,1]);
-set(gca,'FontSize',FS)
-set(gca,'TickLabelInterpreter','latex')
-set(gca,'xscale','log'); set(gca,'yscale','log');
-xticks([0.1,1,10,100,1000,10000])
-yticks(10.^[-2,0,2,4,5])
-%axis([0.1 10000,0.99e-2,1e5])
-legend boxoff
-box on
-
-% Fig 10 (entry for one body)
-%-----------------------------
-FS=16; LW=1; MS=8;
-figure(4)
-hold on
-i1 = i;
-Nf(i1)
-plot(altitudes'/mesh.resolution,mean(errorSquareAnalytic./errorSquareP2,1),'ko','MarkerFaceColor','r','lineWidth',LW,"markerSize",MS)
-legend({'Eros','67P','Phobos','Bennu'},'interpreter','latex','FontSize',FS)
-xlabel('$h/\delta_0$','interpreter','latex','FontSize',FS)
-ylabel('$\mathrm{error\ ratio\ }\frac{\mathrm{analytic}}{\mathrm{quadrature}}$','interpreter','latex','FontSize',FS)
+plot(h,error(:,1),'kd-','MarkerFaceColor','k','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,2),'ko-','MarkerFaceColor','r','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,3),'ks-','MarkerFaceColor','c','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,4),'ks-','MarkerFaceColor','b','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,5),'ks-','MarkerFaceColor','g','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,6),'ks-','MarkerFaceColor','m','LineWidth',LW,'MarkerSize',MS)
+plot(h,error(:,8),'ks-','MarkerFaceColor','y','LineWidth',LW,'MarkerSize',MS)
+legend({['Analytic Polyhedron $N_f=',num2str(meshCoarse.numFaces),'$'],...
+        ['Simple Packing $N_i=',num2str(masconModel{1}.numElements),'$']...
+        ['FVM P1Q1 $N_i=',num2str(masconModel{2}.numElements),'$']...
+        ['FVM P2Q1 $N_i=',num2str(masconModel{3}.numElements),'$']...
+        ['FVM P2Q1 $N_i=',num2str(masconModel{4}.numElements),'$']...
+        ['FVM P2Q2 $N_i=',num2str(masconModel{5}.numElements),'$']...
+        ['FVM P2Q1 $N_i=',num2str(masconModel{7}.numElements),'$']...
+        },'interpreter','latex','FontSize',FS)
+ylabel('error $\%$','interpreter','latex','FontSize',FS)
+xlabel('altitude','interpreter','latex','FontSize',FS)
 set(gcf,'Color',[1,1,1]);
 set(gca,'FontSize',FS)
 set(gca,'TickLabelInterpreter','latex')
@@ -198,5 +157,4 @@ set(gca,'xscale','log'); set(gca,'yscale','log');
 %axis([0.1,10000,0.1,1000])
 legend boxoff
 box on
-
 

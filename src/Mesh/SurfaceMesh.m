@@ -2044,7 +2044,7 @@ classdef SurfaceMesh < handle
                     % check if we create any questionable cycles
                     % if so, push them to the front of the line
                     newLowValenceVertices = obj.updateLowValenceVertices(reducedSpokeVertices);
-                    lowValenceCandidates = [lowValenceCandidates,...
+                    lowValenceCandidates = [lowValenceCandidates;...
                                             newLowValenceVertices];
 
                     % track removed entities

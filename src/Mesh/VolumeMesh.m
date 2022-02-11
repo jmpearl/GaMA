@@ -314,9 +314,9 @@ classdef VolumeMesh < handle
             % clip to internal
             candidates = [X(:),Y(:),Z(:)];
             candidates = [candidates; 
-                          candidates + [0.5, 0,   0]  *ds;
-                          candidates + [0,   0.5, 0]  *ds;
-                          candidates + [0,   0,   0.5]*ds];
+                          candidates + [0.5, 0.5,   0]*ds;
+                          candidates + [0,   0.5, 0.5]*ds;
+                          candidates + [0.5, 0,   0.5]*ds];
 
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
             candidates = candidates(internalNodes,:);

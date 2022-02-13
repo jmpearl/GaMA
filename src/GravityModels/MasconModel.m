@@ -1,4 +1,4 @@
-classdef MasconModel < handle
+classdef MasconModel < handle % test why handle is slow
 % Mass-concentration model 
 %--------------------------------------------------------------------------
 %
@@ -101,13 +101,13 @@ classdef MasconModel < handle
             obj.numElements = size(cm,1);
 
         end
-        function initializeSimplePacking(obj, mesh, spacing, Mu)
+        function initializeSimplePacking(obj, mesh, numMascons, Mu, latticeType)
         % mascons packed in a primitive cubic lattice.
         %------------------------------------------------------------------
         % Inputs:
-        %   mesh ----- SurfaceMesh object or string name of obj file
-        %   spacing -- spacing between mascons
-        %   Mu ------- standard gravitational parameter for object
+        %   mesh -------- SurfaceMesh object or string name of obj file
+        %   numMascons -- number of mascon (approx)
+        %   Mu ---------- standard gravitational parameter for object
         %------------------------------------------------------------------
             
             if isstring(mesh) || ischar(mesh)
@@ -121,44 +121,35 @@ classdef MasconModel < handle
                 error('incorrect number of inputs')
             end
             
-            bodyMax = max(mesh.coordinates,[],1); % max in each dimension
-            bodyMin = min(mesh.coordinates,[],1); % min in each dimension
-            
-            bodyRange=(bodyMax-bodyMin); % ranges in each direction
-            
-            %Extend slightly past ranges
-            bodyMin = bodyMin - 0.05*bodyRange;
-            bodyMax = bodyMax + 0.05*bodyRange;
-            
-            % Number of elements per dimension
-            numSteps = floor((bodyMax-bodyMin)/spacing);
-            
-            % Correct so that ds is constant
-            bodyMax = bodyMin + (numSteps+1)*spacing;
-            
-            % unique x-y-z coordinates
-            x = linspace(bodyMin(1),bodyMax(1),numSteps(1)+2); %#ok<*PROPLC>
-            y = linspace(bodyMin(2),bodyMax(2),numSteps(2)+2);
-            z = linspace(bodyMin(3),bodyMax(3),numSteps(3)+2);
-            
-            % Grid up the domain
-            [X,Y,Z] = meshgrid(x,y,z);
-            candidates = [X(:),Y(:),Z(:)];
-            
-            %insetMesh = mesh.offsetSurfaceMesh(-mesh.resolution/2.0, ...
-            %                                    mesh.numVertices);
-          
-            % Only keep mascons located within the body
-            isKeeper = mesh.isInside(candidates);
-            
-            % package as Nx3 matrix
-            obj.coordinates = candidates(isKeeper>0.5,:);
+            if nargin < 5
+                latticeType = "pc";
+            end
+        
+            % spacing so numInternal works out
+            if strcmp(latticeType,"bcc")
+                ds  = (2*mesh.volume/numMascons)^(1/3);
+            elseif strcmp(latticeType,"fcc")
+                ds  = (4*mesh.volume/numMascons)^(1/3);
+            else
+                ds  = (mesh.volume/numMascons)^(1/3);
+            end
+
+            maxExtent=max(mesh.coordinates,[],1) + 0.5*ds;
+            minExtent=min(mesh.coordinates,[],1) - 0.5*ds; 
+
+            candidates = createLattice(ds,minExtent,maxExtent,latticeType);
+
+            insetSurfaceMesh = mesh.offsetSurfaceMesh(-mesh.resolution/2, ...
+                                                       mesh.numVertices);
+
+            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
+
+            obj.coordinates = candidates(internalNodes,:);
             obj.mu = Mu*ones(size(obj.coordinates,1),1)/size(obj.coordinates,1);
             obj.numElements = size(obj.mu,1);
-
-            % get our resolution
             volumes = ones(obj.numElements,1)/obj.numElements*mesh.volume;
             obj.calculateResolution(volumes);
+
         end
         function initializeExtendedTetrahedra(obj, mesh, numLayers, Mu)
         % Mascons distribution technique of Chanut et al. 2015
@@ -250,6 +241,7 @@ classdef MasconModel < handle
             % get our resolution
             obj.calculateResolution(volumes);
         end
+        
         function calculateResolution(obj,volumes)
             obj.res = 0.5*volumes.^(1/3);
         end

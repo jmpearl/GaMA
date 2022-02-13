@@ -45,12 +45,13 @@ for j = 1:numAltitudes
     if j == 1
         pts{j} = meshSample.coordinates;
     else
-        pts{j} = meshSample.offsetSurfaceMesh(altitudes(j),numFacesSampleMesh);
+        meshSampleNew = meshSample.offsetSurfaceMesh(altitudes(j),numFacesSampleMesh);
+        pts{j} = meshSampleNew.coordinates;
     end
     tic;
-    accOriginal{j} = truthGravityModel.acceleration(pts); toc
-    accOgMag{j} = vecnorm(accOriginal,2,2);
-    numSamplesActual(j) = size(pts,1);
+    accOriginal{j} = truthGravityModel.acceleration(pts{j}); toc
+    accOgMag{j} = vecnorm(accOriginal{j},2,2);
+    numSamplesActual(j) = size(pts{j},1);
 end
 
 

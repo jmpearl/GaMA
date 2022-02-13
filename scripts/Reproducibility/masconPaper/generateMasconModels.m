@@ -3,95 +3,137 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
 
     insetSurfaceMesh = meshCoarse.offsetSurfaceMesh(-meshCoarse.resolution/2, ...
                                                      meshCoarse.numVertices);
-
+    
+    % coarse mesh
     vmCoarse = VolumeMesh(meshCoarse);
     vmCoarse.initializeFromSimpleLattice(Ni-meshCoarse.numVertices);
     vmCoarse.smooth(5)
 
+    % coarse mesh P2 
+    vmCoarseP2 = VolumeMesh(vmCoarse);
+    vmCoarseP2.setDegree(2);
+    vmCoarseP2.curve(mesh);
+
+    % based on full surface resolution
     vmFine = VolumeMesh(mesh);
     vmFine.initializeFromSimpleLattice(Ni);
     vmFine.smooth(5);
 
+    % octree infill with coarse surface - degree 2
     vmOctreeDegree2 = VolumeMesh(mesh);
     vmOctreeDegree2.initializeFromOctree(round(Ni/4.0),2,2);
     vmOctreeDegree2.smooth(5);
     vmOctreeDegree2.setDegree(2);
     vmOctreeDegree2.curve(mesh);
 
+    % surface interation 1/2 coarsening degree 2
     vmIter = VolumeMesh(meshCoarse);
     vmIter.initializeFromSurfaceIteration(1/2);
     vmIter.smooth(2)
     vmIter.setDegree(2);
     vmIter.curve(mesh);
 
+    % surface interation 1/3 coarsening degree 2
     vmIter2 = VolumeMesh(meshCoarse);
     vmIter2.initializeFromSurfaceIteration(1/3);
     vmIter2.smooth(2)
     vmIter2.setDegree(2);
     vmIter2.curve(mesh);
-
+    
+    % surface interation 1/2 full refine surface
     vmIter4 = VolumeMesh(mesh);
     vmIter4.initializeFromSurfaceIteration(1/2,meshCoarse.numVertices);
     vmIter4.smooth(2)
 
+    % surface interation 1/3 full refine surface
     vmIter5 = VolumeMesh(mesh);
     vmIter5.initializeFromSurfaceIteration(1/3,round(meshCoarse.numVertices*1.5));
     vmIter5.smooth(2)
 
+     % surface interation 1/4 full refine surface
     vmIter6 = VolumeMesh(mesh);
     vmIter6.initializeFromSurfaceIteration(1/4,round(meshCoarse.numVertices*2.0));
     vmIter6.smooth(2)
 
     % Gravity Models
     %-------------------------------------------------------------------------
-    % polyhedral test mesh
 
-    % mascon - packing
-    masconModel{1} = MasconModel(insetSurfaceMesh,Mu,Ni);
+    i=1;
+
+    % mascon - lattice packing distributions
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromSimpleLattice(insetSurfaceMesh,Mu,Ni);
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromBCCLattice(insetSurfaceMesh,Mu,Ni);
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromFCCLattice(insetSurfaceMesh,Mu,Ni);
+    i=i+1;
 
     % mascon - volume mesh P1 vertex quads
-    masconModel{2} = MasconModel();
-    masconModel{2}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarse,Mu,'excludesurface');
+    i=i+1;
 
     % mascon - volume mesh P2 mesh vertex quad
-    vmCoarse.setDegree(2);
-    vmCoarse.curve(mesh);
-    masconModel{3} = MasconModel();
-    masconModel{3}.initializeFromVolumeMesh(vmCoarse,Mu,'vertex');
-    masconModel{4} = MasconModel();
-    masconModel{4}.initializeFromVolumeMesh(vmCoarse,Mu,'cell');
-    masconModel{5} = MasconModel();
-    masconModel{5}.initializeFromVolumeMesh(vmCoarse,Mu,'node');
-    masconModel{6} = MasconModel();
-    masconModel{6}.initializeFromVolumeMesh(vmCoarse,Mu,'excludesurface');
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarseP2,Mu,'vertex');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarseP2,Mu,'cell');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarseP2,Mu,'node');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmCoarseP2,Mu,'excludesurface');
+    i=i+1;
 
     % mascon - degree 2 octree vertex quad
-    masconModel{7} = MasconModel();
-    masconModel{7}.initializeFromVolumeMesh(vmOctreeDegree2,Mu,'excludesurface');
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmOctreeDegree2,Mu,'excludesurface');
+    i=i+1;
 
     % based on true mesh excluding surface points simple lattice
-    masconModel{8} = MasconModel();
-    masconModel{8}.initializeFromVolumeMesh(vmFine,Mu,'excludesurface');
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmFine,Mu,'excludesurface');
+    i=i+1;
 
     % based on true mesh excluding surface points w/ surface iteration
-    masconModel{9} = MasconModel();
-    masconModel{9}.initializeFromVolumeMesh(vmIter,Mu,'excludesurface');
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmIter,Mu,'excludesurface');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmIter2,Mu,'excludesurface');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmIter4,Mu,'excludesurface');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmIter5,Mu,'excludesurface');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeFromVolumeMesh(vmIter6,Mu,'excludesurface');
+    i=i+1;
 
-    masconModel{10} = MasconModel();
-    masconModel{10}.initializeFromVolumeMesh(vmIter2,Mu,'excludesurface');
-
-    masconModel{11} = MasconModel();
-    masconModel{11}.initializeFromVolumeMesh(vmIter4,Mu,'excludesurface');
-
-    masconModel{12} = MasconModel();
-    masconModel{12}.initializeFromVolumeMesh(vmIter5,Mu,'excludesurface');
-
-    masconModel{13} = MasconModel();
-    masconModel{13}.initializeFromVolumeMesh(vmIter6,Mu,'excludesurface');
-
-    % based on true mesh excluding surface points
-    masconModel{14} = MasconModel();
-    masconModel{14}.initializeExtendedTetrahedra(vmCoarse,3,Mu);
-    masconModel{15} = MasconModel();
-    masconModel{15}.initializeExtendedTetrahedra(vmCoarse,3,Mu);
+    % based on extended tet method
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,1);
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,3);
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,1,'lumpcore');
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeExtendedTetrahedra(vmCoarseP2,Mu,1);
+    i=i+1;
+    masconModel{i} = MasconModel();
+    masconModel{i}.initializeExtendedTetrahedra(vmCoarseP2,Mu,1,'lumpcore');
+    i=i+1;
 end

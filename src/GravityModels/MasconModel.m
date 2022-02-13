@@ -151,7 +151,7 @@ classdef MasconModel < handle % test why handle is slow
             obj.calculateResolution(volumes);
 
         end
-        function initializeExtendedTetrahedra(obj, mesh, numLayers, Mu)
+        function initializeExtendedTetrahedra(obj, mesh, Mu, numLayers, method)
         % Mascons distribution technique of Chanut et al. 2015
         %------------------------------------------------------------------
         % Mascon distribution method proposed by T.G.G Chanut, S. Aljbaae,
@@ -168,73 +168,24 @@ classdef MasconModel < handle % test why handle is slow
         %   mesh ------ SurfaceMesh object or string name of obj file
         %   numLayers - number of layers
         %   Mu -------- standard gravitational parameter
+        %   method ---- 'lumpcore' will make the inner most layer sphere
+        %                and treat it as a mascon. Requires numLayer >=2
         %------------------------------------------------------------------
             
-            if isstring(mesh) || ischar(mesh)
-                mesh = SurfaceMesh(mesh); % we need this to be consistent
-            elseif ~isa(mesh,'SurfaceMesh')
-                error('Mesh input must be SurfaceMesh object or string specifing .obj mesh file')
+            % process inputs
+            assert(nargin>=3,"incorrect number of arguments")
+            if nargin < 3
+                numLayers = 1
             end
-            nargin
-            if nargin == 3
-                Mu = mesh.volume;
-            elseif nargin < 3 || nargin > 4
-                error('incorrect number of inputs')
+            if nargin < 4 
+                method = "standard";
             end
+
+            % call our general function
+            [ centroids,volumes] = createExtendedTetrahedralDistribution( mesh, numLayers, method);
             
-            % set centroid as origin
-            vertices = mesh.coordinates-mesh.centroid;
-            
-            % three vertices defining each exterior facet
-            p1 = vertices(mesh.faces(:,1),:);
-            p2 = vertices(mesh.faces(:,2),:);
-            p3 = vertices(mesh.faces(:,3),:);
-            
-            
-            obj.coordinates = zeros(numLayers*mesh.numFaces,3);
-            volumes = zeros(numLayers*mesh.numFaces,1);
-            
-            % outer prism layers
-            for i = 1:numLayers-1
-                
-                % split tetrahedra, define vertices of inner facets
-                p4 = (numLayers-i)/numLayers*p1;
-                p5 = (numLayers-i)/numLayers*p2;
-                p6 = (numLayers-i)/numLayers*p3;
-                
-                % calculated centroids of 3 tets defining prism
-                c1 = (p1+p2+p3+p4)/4;
-                c2 = (p2+p3+p4+p6)/4;
-                c3 = (p2+p4+p5+p6)/4;
-                
-                % volume of tets defining prism
-                vol1 = abs(dot((p1-p4),cross((p2-p4),(p3-p4),2),2)/6);
-                vol2 = abs(dot((p4-p6),cross((p2-p6),(p3-p6),2),2)/6);
-                vol3 = abs(dot((p2-p6),cross((p4-p6),(p5-p6),2),2)/6);
-                
-                % indices for prims layer i
-                i1 = mesh.numFaces*(i-1)+1;
-                i2 = mesh.numFaces*i;
-                
-                % sum to get prism properties from tetrahedra
-                volumes(i1:i2,1) = vol1+vol2+vol3;
-                obj.coordinates(i1:i2,1:3) = (c1.*vol1+c2.*vol2+c3.*vol3)...
-                    ./volumes(i1:i2,1);
-                
-                p1=p4; p2=p5; p3=p6; % reset iterations
-                % inner facet --> outer facet
-                
-            end
-            
-            % add in the inner core of tetarahera
-            i = numLayers;
-            i1 = mesh.numFaces*(i-1)+1;
-            i2 = mesh.numFaces*i;
-            
-            obj.coordinates(i1:i2,1:3)  = (p1+p2+p3)/4;
-            obj.coordinates = obj.coordinates + mesh.centroid;
-            
-            volumes(i1:i2,1) = abs(dot((p1),cross(p2,p3,2),2)/6);
+            % set our class parameters
+            obj.coordinates = centroids;
             obj.mu = Mu*volumes/sum(volumes);
             obj.numElements = size(obj.mu,1);
 
@@ -330,6 +281,71 @@ classdef MasconModel < handle % test why handle is slow
                 
                 % VVU = 3*((mu_rinv3.*r)'*(r.*rinv2))-sum(mu_rinv3)*eye(3);
             end
+        end
+        function plot(obj,mesh,markerScaleFactor,sliceAxis)
+        % plot slice
+        %------------------------------------------------------------------
+        
+            if nargin < 3
+                markerScaleFactor = 10;
+            end
+            if nargin < 4
+                sliceAxis = 2;
+            end
+            FS=16;
+            LW=1;
+            MS=8;
+
+            thresh = min(max(obj.coordinates,[],1)-min(obj.coordinates,[],1))*0.125;
+            disp(thresh)
+            figure
+            hold on
+        
+            % if given a mesh plot it 
+            if nargin >= 2
+                % plot faces in certain range x
+                c = mesh.faceCentroids();
+                for i = 1:mesh.numFaces
+                    if (c(i,sliceAxis) < thresh && c(i,sliceAxis) > -thresh)
+                        pts = [mesh.coordinates(mesh.faces(i,:),:);...
+                               mesh.coordinates(mesh.faces(i,1),:)];
+                        plot3(pts(:,1),pts(:,2),pts(:,3),'k-')
+                    end
+                end
+
+            end
+
+            c = obj.coordinates;
+
+            resolution = obj.mu.^(1/3);
+            MS = resolution./max(resolution)*markerScaleFactor;
+            color = 1.0-(MS-min(MS))/max(max(MS)-min(MS),mean(MS)/10000);
+            colorVecMax = [1,1,0];
+            colorVecMin = [0,0,1];
+            for i = 1:obj.numElements
+                if (c(i,sliceAxis) < thresh && c(i,sliceAxis) > -thresh)
+                    colorVeci = (1-color(i))*colorVecMax + color(i)*colorVecMin;
+                    MSi = MS(i);
+                    plot3(obj.coordinates(i,1),...
+                          obj.coordinates(i,2),...
+                          obj.coordinates(i,3),'ko','MarkerFaceColor',colorVeci,'MarkerSize',MSi)
+                end
+            end
+            set(gcf,'Color',[1,1,1]);
+            set(gca,'FontSize',FS)
+            set(gca,'TickLabelInterpreter','latex')
+            daspect([1,1,1])
+            
+            if sliceAxis==1
+                view([1,0,0])
+            elseif sliceAxis==2   
+                view([0,1,0])
+            elseif sliceAxis==3
+                view([0,0,1])
+            end
+
+            box off
+            axis off
         end
     end
 end

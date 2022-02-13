@@ -491,7 +491,7 @@ classdef SurfaceMesh < handle
             
         end
         function centroids = faceCentroids(obj)
-        % centroids of faces
+        % centroids of faces -- degree 1
         %------------------------------------------------------------------
         % Outputs:
         %   centroids - coordinates of centroids
@@ -1166,7 +1166,7 @@ classdef SurfaceMesh < handle
             % Rectilinear Meshes
             if ~obj.isCurved
                 vf = dot(obj.nodeAreaVectors(),obj.coordinates,2);
-                cf = 0.25*vf'*obj.coordinates;
+                cf = 0.75*vf'*obj.coordinates;
                 centroid = cf/sum(vf);
                 
             % Curvilinear Meshes
@@ -1229,6 +1229,71 @@ classdef SurfaceMesh < handle
         %------------------------------------------------------------------
             obj.coordinates = obj.coordinates - obj.centroid;
             obj.centroid = [0,0,0];
+        end
+        
+        function [centroids,volumes] = extendedTetrahedaCentroids(obj)
+        % returns centroids and volumes of tets (tri->mesh centroid)
+        %------------------------------------------------------------------
+        % this is an extension of Chanut et. al. 2015 's mascon generation
+        % approach generalized for curvilinear meshes
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids -- centroids of tetrahedra
+        %   volumes ---- assoc. volumes
+        %------------------------------------------------------------------
+
+         % Rectilinear Meshes
+            if ~obj.isCurved
+                volumes = 1/3*dot(obj.faceAreaVectors(),obj.faceCentroids(),2);
+                centroids = 3/4*obj.faceCentroids();
+                
+            % Curvilinear Meshes
+            else
+                
+                % quadrature rule for unit triangle (Nix1)
+                d = 3*obj.degree - 1;
+                [u,v,w] = NewtonCotesTriangle(d);
+                
+                % Ng interpolants/derivatives at Ni quadrature points (NixNg)
+                [ phi, dphidu, dphidv ] = LagrangeInterpolantsTriangle( u,v, obj.degree );
+                
+                %-- x,y,z coords of nodes separated in (Nf x Ng) format
+                numNodesPerFace = size(obj.faces,2);
+                Xx = zeros(obj.numFaces,numNodesPerFace);
+                Xy = zeros(obj.numFaces,numNodesPerFace);
+                Xz = zeros(obj.numFaces,numNodesPerFace);
+                
+                for i = 1:numNodesPerFace
+                    Xx(:,i) = obj.coordinates(obj.faces(:,i),1);
+                    Xy(:,i) = obj.coordinates(obj.faces(:,i),2);
+                    Xz(:,i) = obj.coordinates(obj.faces(:,i),3);
+                end
+                
+                % coordinates of quadrature points ( NixNf )
+                xx = phi*Xx';
+                xy = phi*Xy';
+                xz = phi*Xz';
+                
+                %--  (Ni x Nf) = (NixNg) * (NgxNf)
+                Ax = (dphidu*Xy').*(dphidv*Xz') - (dphidu*Xz').*(dphidv*Xy');
+                Ay = (dphidu*Xz').*(dphidv*Xx') - (dphidu*Xx').*(dphidv*Xz');
+                Az = (dphidu*Xx').*(dphidv*Xy') - (dphidu*Xy').*(dphidv*Xx');
+                
+                % volume of each quadrature point (Ni x Nf)
+                voli = xx.*Ax + xy.*Ay + xz.*Az;
+                
+                % centroids of quadrature points (Ni x Nf)
+                cx = xx.*voli;
+                cy = xy.*voli;
+                cz = xz.*voli;
+                
+                %  face volume (Nix1)' x (NixNf) ---> Nfx1
+                volumes = (1/6*w'*voli)';
+                
+                % body centroid (NfxNi)*(Nix1) ./ (Nfx1)  ---> Nfx1
+                centroids = 1/8*([cx'*w,cy'*w,cz'*w])./volumes;
+                
+            end
         end
         
         function [ptsq,Aq] = createQuadrature(obj,degreeOfExactness)
@@ -1639,10 +1704,9 @@ classdef SurfaceMesh < handle
         % Inputs:
         %   mesh -- SurfaceMesh object more defining more refined mesh 
         %------------------------------------------------------------------
-            if ~isa(mesh,'SurfaceMesh')
-                error('must input a SurfaceMesh to curve onto')
-            end
-            
+            assert(isa(mesh,'SurfaceMesh'),'must input a SurfaceMesh to curve onto')
+            assert(mesh.degree==1,'projection/curving is not set up for curvilinear meshes')
+            assert(~mesh.isCurved,'projection/curving is not set up for curvilinear meshes')
             if mesh.numFaces<obj.numFaces
                 warning('Input mesh for projection is coarser than original mesh')
             end
@@ -2503,7 +2567,7 @@ classdef SurfaceMesh < handle
         % Outputs:
         %   projectPoints - new post-projection coordinates
         %------------------------------------------------------------------
-            
+            threshold = 1e-4*obj.resolution;
             numProjPoints = size(points,1);
             numCandidates = 12;
             maxProjectionDistance = min(max(obj.coordinates,[],1) - ...
@@ -2554,7 +2618,6 @@ classdef SurfaceMesh < handle
 
                 progressMeter.update(100*i/numProjPoints);
 
-                threshold = 1e-4;
                 ni = pointNormals(i,:);    
                 coordi = points(i,:); 
                 

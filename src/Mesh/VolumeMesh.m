@@ -205,38 +205,7 @@ classdef VolumeMesh < handle
         %   numInternalVertices -- approximate number of internal vertices
         %------------------------------------------------------------------
 
-            % approximate lattice spacing
-            ds = (obj.surfaceMesh.volume/numInternalVertices)^(1/3);
-
-            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
-            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
-
-            % Number of elements per dimension
-            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
-            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
-            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
-
-            % Correct so that ds is constant
-            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
-
-            % 1D x-y-z coordinates
-            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
-            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
-            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
-
-            % get the grid
-            [X,Y,Z] = meshgrid(x,y,z);
-
-            % create a buffer 
-            offsetDistance = obj.surfaceMesh.resolution/2.0;
-            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-offsetDistance, ...
-                                                                  obj.surfaceMesh.numVertices);
-            % clip to internal
-            candidates = [X(:),Y(:),Z(:)];
-            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
-            candidates = candidates(internalNodes,:);
-
-            obj.initializeFromPointCloud(candidates,'internal');
+            obj.initializeFromLattice(numInternalVertices,"pc");
 
         end
         function initializeFromBCCLattice(obj,numInternalVertices)
@@ -244,79 +213,46 @@ classdef VolumeMesh < handle
         %------------------------------------------------------------------
         % Inputs:
         %   numInternalVertices -- approximate number of internal vertices
-        %------------------------------------------------------------------
-            
-            % approximate lattice spacing
-            ds = (2*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
-
-            maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
-            minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
-
-            % Number of elements per dimension
-            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
-            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
-            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
-
-            % Correct so that ds is constant
-            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
-
-            % 1D x-y-z coordinates
-            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
-            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
-            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
-
-            % get the grid
-            [X,Y,Z] = meshgrid(x,y,z);
-            
-            % create a buffer 
-            insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
-                                                                  obj.surfaceMesh.numVertices);
-            % clip to internal
-            candidates = [X(:),Y(:),Z(:)];
-            candidates = [candidates; candidates + [1,1,1]*0.5*ds];
-            internalNodes = insetSurfaceMesh.isInside(candidates)==1;
-            candidates = candidates(internalNodes,:);
-
-            obj.initializeFromPointCloud(candidates,'internal');
+        %------------------------------------------------------------------         
+           obj.initializeFromLattice(obj,numInternalVertices,"bcc");
         end
         function initializeFromFCCLattice(obj,numInternalVertices)
         % initializes a volume mesh w/ BCC lattice point distribution
         %------------------------------------------------------------------
         % Inputs:
         %   numInternalVertices -- approximate number of internal vertices
+        %------------------------------------------------------------------         
+           obj.initializeFromLattice(obj,numInternalVertices,"fcc");
+        end
+        function initializeFromLattice(obj,numInternalVertices,latticeType)
+        % initializes a volume mesh w/ BCC lattice point distribution
+        %------------------------------------------------------------------
+        % Inputs:
+        %   numInternalVertices -- approximate number of internal vertices
+        %   latticeType ---------- pc, fcc, or bcc
         %------------------------------------------------------------------
 
-            % approximate lattice spacing
-            ds = (4*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+            % optional input
+            if nargin < 3
+                latticeType = "pc";
+            end
+        
+            % spacing so numInternal works out
+            if strcmp(latticeType,"bcc")
+                ds  = (2*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+            elseif strcmp(latticeType,"fcc")
+                ds  = (4*obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+            else
+                ds  = (obj.surfaceMesh.volume/numInternalVertices)^(1/3);
+            end
 
             maxExtent=max(obj.surfaceMesh.coordinates,[],1) + 0.5*ds;
             minExtent=min(obj.surfaceMesh.coordinates,[],1) - 0.5*ds; 
 
-            % Number of elements per dimension
-            numStepsx = round((maxExtent(1)-minExtent(1))/ds);
-            numStepsy = round((maxExtent(2)-minExtent(2))/ds);
-            numStepsz = round((maxExtent(3)-minExtent(3))/ds);
+            candidates = createLattice(ds,minExtent,maxExtent,latticeType);
 
-            % Correct so that ds is constant
-            maxExtent = minExtent+[numStepsx+1,numStepsy+1,numStepsz+1]*ds;
-
-            % 1D x-y-z coordinates
-            x = linspace(minExtent(1),maxExtent(1),numStepsx+2);
-            y = linspace(minExtent(2),maxExtent(2),numStepsy+2);
-            z = linspace(minExtent(3),maxExtent(3),numStepsz+2);
-
-            % get the grid
-            [X,Y,Z] = meshgrid(x,y,z);
-
-            % create a buffer 
             insetSurfaceMesh = obj.surfaceMesh.offsetSurfaceMesh(-obj.surfaceMesh.resolution/2, ...
                                                                   obj.surfaceMesh.numVertices);
-            % clip to internal
-            candidates = [X(:),Y(:),Z(:)];
-            candidates = [candidates; 
-                          candidates + [0.5, 0.5,   0]*ds;
-                          candidates + [0,   0.5, 0.5]*ds;
-                          candidates + [0.5, 0,   0.5]*ds];
 
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
             candidates = candidates(internalNodes,:);

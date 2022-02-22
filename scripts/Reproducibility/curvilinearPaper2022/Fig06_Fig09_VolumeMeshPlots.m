@@ -1,7 +1,7 @@
 %==========================================================================
-% Script used to create Figure 8, 11, 12, 13
-% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
-% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% Script used to create Figure 6 and 9
+% Pearl J.M., Hitt, D.L., "Cutting Corners: Curvilinear Surface-Based
+% Gravity Models for Asteroids and Comets"
 % 2022 (submitted).
 % 
 % ** Note GaMA is under development small variations from published 
@@ -95,7 +95,7 @@ epsPoly = 100*vecnorm(truthAcceleration-polyhedralAcceleration,2,2)./vecnorm(tru
 % load the fields in and export for viewing w/ paraview
 %--------------------------------------------------------------------------
 
-% Fig 8, 11, 12 created in paraview
+% Fig 6 and 9 created in paraview
 %----------------------------------
 volumeMesh.clearFields();
 volumeMesh.addNodeField(h,'altitude');
@@ -113,8 +113,7 @@ volumeMesh.writeVTK('testExternalMeshOut.vtk')
 
 
 
-% Fig 13
-%--------
+% got cut
 figure(1)
 hold on 
 plot(h(lap_fR<-6.28)/mesh.resolution,lap_fR(lap_fR<-6.28),'ko','MarkerFaceColor','c')

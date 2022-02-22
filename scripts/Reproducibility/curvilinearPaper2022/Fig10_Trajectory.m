@@ -1,7 +1,7 @@
 %==========================================================================
-% Script used for Figure 14 (a) (b) (c) of
-% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
-% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% Script used for Figure 10 (a) (b) (c) of
+% Pearl J.M., Hitt, D.L., "Cutting Corners: Curvilinear Surface-Based
+% Gravity Models for Asteroids and Comets"
 % 2022 (submitted).
 %
 % ** Note GaMA is under development small variations from published 
@@ -138,7 +138,7 @@ t_interp = t_interp/Tperiod;
 
 % Plot our results
 %--------------------------------------------------------------------------
-% Fig 14a
+% Fig 10a
 %----------
 figure(1)
 LW=2; LWA=3; MS=8; YC1=0.9; YC2=0.85; FS = 12; n=1000;
@@ -186,7 +186,7 @@ legend({'Analytic-46906','Analytic-7996','P1-7996','P2-7996','P3-7996','P4-7996'
 legend boxoff
 
 
-% Figure 14 b
+% Figure 10 b
 %---------------
 figure(2)
 hold on
@@ -206,7 +206,7 @@ legend boxoff
 set(gca,'FontSize',FS)
 set(gca,'TickLabelInterpreter','latex')
 
-% Figure 14 c
+% Figure 10 c
 %----------------
 figure(3)
 hold on

@@ -1,5 +1,5 @@
 clear all; close all; clc
-
+addpath(genpath('../..'))
 
 if isfile('Test_log')
     delete('Test_log')

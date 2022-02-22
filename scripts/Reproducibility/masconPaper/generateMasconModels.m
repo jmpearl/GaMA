@@ -45,17 +45,17 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
     
     % surface interation 1/2 full refine surface
     vmIter4 = VolumeMesh(mesh);
-    vmIter4.initializeFromSurfaceIteration(1/2,meshCoarse.numVertices);
+    vmIter4.initializeFromSurfaceIteration(1/2,2.0*meshCoarse.numVertices);
     vmIter4.smooth(2)
 
     % surface interation 1/3 full refine surface
     vmIter5 = VolumeMesh(mesh);
-    vmIter5.initializeFromSurfaceIteration(1/3,round(meshCoarse.numVertices*1.5));
+    vmIter5.initializeFromSurfaceIteration(1/3,round(meshCoarse.numVertices*3.0));
     vmIter5.smooth(2)
 
      % surface interation 1/4 full refine surface
     vmIter6 = VolumeMesh(mesh);
-    vmIter6.initializeFromSurfaceIteration(1/4,round(meshCoarse.numVertices*2.0));
+    vmIter6.initializeFromSurfaceIteration(1/4,round(meshCoarse.numVertices*4.0));
     vmIter6.smooth(2)
 
     % Gravity Models
@@ -65,13 +65,13 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
 
     % mascon - lattice packing distributions
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni);
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Ni,Mu);
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni,'bcc');
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Ni,Mu,'bcc');
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni,'fcc');
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Ni,Mu,'fcc');
     i=i+1;
 
     % mascon - volume mesh P1 vertex quads

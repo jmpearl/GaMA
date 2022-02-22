@@ -15,13 +15,13 @@ jobs:
     - run: |
         sudo apt -yq update
         sudo apt install -yq --no-install-recommends octave        
-    - run: octave --eval "scripts/Tests/Test_All"
-      working-directory: tests
+    - run: octave --eval "Test_All"
+      working-directory: scripts/Tests
 
   windows:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
     - run: choco install octave.portable
-    - run: octave --eval "scripts/Tests/Test_All"
-      working-directory: tests
+    - run: octave --eval "Test_All"
+      working-directory: scripts/Tests

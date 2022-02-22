@@ -4530,10 +4530,10 @@ classdef SurfaceMesh < handle
         %   filename - string specifing file name
         %------------------------------------------------------------------
          
-            assert(contains(fileName,'.obj'))
+            assert(contains(fileName,'.obj'),'unsupported file type')
             
-            vertexchar = [];
-            facechar = [];
+            vertexchar = [''];
+            facechar = [''];
             
             fid = fopen(fileName,'r');
             tline = fgetl(fid);

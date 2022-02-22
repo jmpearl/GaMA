@@ -3,7 +3,7 @@ function failed = Test_VolumeMesh_Bennu(failed)
 
 % Test SurfaceMesh class on 1442 facet mesh of Bennu
 %--------------------------------------------------------------------------
-tol = 1e-14;
+tol = 1e-13;
 
 
 meshfile = 'Bennu_2692.obj';

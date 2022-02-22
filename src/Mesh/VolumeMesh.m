@@ -492,8 +492,14 @@ classdef VolumeMesh < handle
         function delaunayTriangulation(obj)
         % creates DT from the stored vertices
         %------------------------------------------------------------------
-            DT = delaunayTriangulation(obj.coordinates);
-            obj.cells = DT.ConnectivityList;
+            % try-catch to support octave
+            try
+                DT = delaunayTriangulation(obj.coordinates);
+                obj.cells = DT.ConnectivityList;
+            catch
+                obj.cells = delaunay(obj.coordinates);
+            end
+            
             obj.numCells = size(obj.cells,1);
             obj.numVertices = size(obj.coordinates,1);
             obj.numNodes = obj.numVertices;

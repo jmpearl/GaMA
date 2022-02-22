@@ -14,7 +14,11 @@ A number of example scripts highlight different functionality within the code an
 
 ### Version Requirements
 GaMA can be run with Matlab or GNU Octave* and does not require pay-for toolboxes. The current version of GaMA has been tested on Matlab versions R2018b-R2021b and GNU Octave 5.2.0. Portions of the code make use of [implicit expansion](https://blogs.mathworks.com/loren/2016/10/24/matlab-arithmetic-expands-in-r2016b/) and
-this will cause errors when used with Matlab R2016b or earlier. The vecnorm function is also used which was not introduced until R2017b. *Note, GNU Octave currently is incompatible with the VolumeMesh class* 
+this will cause errors when used with Matlab R2016b or earlier. The vecnorm function is also used which was not introduced until R2017b. Note with GNU Octave performance is notable worse and
+```
+warning('off','Octave:data-file-in-path')
+```
+can be used to suppress the fopen warning associated with searching to load path for file names.
 
 ### Contributing
 Contribution are welcome and those interested in contributing should see the [CONTRIBUTING](CONTRIBUTING)  file for details.

@@ -24,5 +24,3 @@ jobs:
         uses: matlab-actions/run-command@v1
         with:
           command: scripts/Tests/Test_All.m
-        run: |
-          echo "word"

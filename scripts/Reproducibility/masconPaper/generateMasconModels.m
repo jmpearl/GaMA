@@ -3,7 +3,10 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
 
     insetSurfaceMesh = meshCoarse.offsetSurfaceMesh(-meshCoarse.resolution/2, ...
                                                      meshCoarse.numVertices);
-    
+    meshCoarseP2 = SurfaceMesh(meshCoarse);
+    meshCoarseP2.setDegree(2);
+    meshCoarseP2.curve(mesh);
+
     % coarse mesh
     vmCoarse = VolumeMesh(meshCoarse);
     vmCoarse.initializeFromSimpleLattice(Ni-meshCoarse.numVertices);
@@ -62,13 +65,13 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
 
     % mascon - lattice packing distributions
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeFromSimpleLattice(insetSurfaceMesh,Mu,Ni);
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni);
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeFromBCCLattice(insetSurfaceMesh,Mu,Ni);
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni,'bcc');
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeFromFCCLattice(insetSurfaceMesh,Mu,Ni);
+    masconModel{i}.initializeSimplePacking(insetSurfaceMesh,Mu,Ni,'fcc');
     i=i+1;
 
     % mascon - volume mesh P1 vertex quads
@@ -122,18 +125,18 @@ function masconModel = generateMasconModels(mesh,meshCoarse,Mu,Ni)
 
     % based on extended tet method
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,1);
+    masconModel{i}.initializeExtendedTetrahedra(meshCoarse,Mu,1);
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,3);
+    masconModel{i}.initializeExtendedTetrahedra(meshCoarse,Mu,3);
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeExtendedTetrahedra(vmCoarse,Mu,1,'lumpcore');
+    masconModel{i}.initializeExtendedTetrahedra(meshCoarse,Mu,2,'lumpcore');
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeExtendedTetrahedra(vmCoarseP2,Mu,1);
+    masconModel{i}.initializeExtendedTetrahedra(meshCoarseP2,Mu,1);
     i=i+1;
     masconModel{i} = MasconModel();
-    masconModel{i}.initializeExtendedTetrahedra(vmCoarseP2,Mu,1,'lumpcore');
+    masconModel{i}.initializeExtendedTetrahedra(meshCoarseP2,Mu,2,'lumpcore');
     i=i+1;
 end

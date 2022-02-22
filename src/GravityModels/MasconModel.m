@@ -117,7 +117,7 @@ classdef MasconModel < handle % test why handle is slow
             end
             if nargin == 3
                 Mu = mesh.volume;
-            elseif nargin < 3 || nargin > 4
+            elseif nargin < 3 || nargin > 5
                 error('incorrect number of inputs')
             end
             
@@ -173,11 +173,12 @@ classdef MasconModel < handle % test why handle is slow
         %------------------------------------------------------------------
             
             % process inputs
+            assert(isa(mesh,"SurfaceMesh"),"input 1 must be a surface mesh")
             assert(nargin>=3,"incorrect number of arguments")
-            if nargin < 3
-                numLayers = 1
+            if nargin < 4
+                numLayers = 1;
             end
-            if nargin < 4 
+            if nargin < 5 
                 method = "standard";
             end
 

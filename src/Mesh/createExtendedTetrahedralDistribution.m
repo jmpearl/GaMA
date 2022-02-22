@@ -44,16 +44,6 @@ function [ centroids,volumes] = createExtendedTetrahedralDistribution( mesh, num
     % get ext. tet. volume for each layer and subtract to get prism volumes
     for i = 1:numLayers
         [comi,voli] = smLocal.extendedTetrahedaCentroids();
-        
-        % surface of next layer
-        if strcmpi(method,"lumpcore") && i == numLayers-1
-            posMag = vecnorm(smLocal.coordinates,2,2);
-            radius = min(posMag)-smLocal.resolution;
-            assert(radius>0.0,'lumpedcore radius < 0!')
-            smLocal.coordinates = smLocal.coordinates./posMag * radius;
-        else
-            smLocal.coordinates = smLocal.coordinates * (numLayers-i)/numLayers;
-        end
 
         % subtract inner tet from outer tet to get the prism
         if i > 1
@@ -71,6 +61,20 @@ function [ centroids,volumes] = createExtendedTetrahedralDistribution( mesh, num
             centroids(layerIndices,1:3) = comi;
             volumes(layerIndices,1) = voli;
         end
+
+        % surface of next layer
+        if strcmpi(method,"lumpcore") && i == numLayers-1
+            posMag = vecnorm(smLocal.coordinates,2,2);
+            radius = min(posMag)-smLocal.resolution;
+            if radius<0.0
+                warning("radius < 0 skipping last lumped layer")
+                break
+            end
+            smLocal.coordinates = smLocal.coordinates./posMag * radius;
+        else
+            smLocal.coordinates = smLocal.coordinates * (numLayers-i)/numLayers;
+        end
+        
     end
 
 end

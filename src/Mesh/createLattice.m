@@ -43,12 +43,12 @@ function [coordinates] = createLattice(ds,minExtent,maxExtent,latticeType)
     % if we have a bcc or fcc lattice we need to copy and shift
     coordinates = [X(:),Y(:),Z(:)];
     if strcmp(latticeType,"bcc")
-        coordinates = [coordinates; c
+        coordinates = [coordinates;...
                        coordinates + [0.5,   0.5, 0.5]*ds];
     elseif strcmpi(latticeType,"fcc")
-        coordinates = [coordinates;
-                       coordinates + [0.5, 0.5,   0]*ds;
-                       coordinates + [0,   0.5, 0.5]*ds;
+        coordinates = [coordinates;...
+                       coordinates + [0.5, 0.5,   0]*ds;...
+                       coordinates + [0,   0.5, 0.5]*ds;...
                        coordinates + [0.5, 0,   0.5]*ds];
     end
 end

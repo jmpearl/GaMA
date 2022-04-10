@@ -18,7 +18,7 @@ this will cause errors when used with Matlab R2016b or earlier. The vecnorm func
 ```
 warning('off','Octave:data-file-in-path')
 ```
-can be used to suppress the fopen warning associated with searching to load path for file names.
+can be used to suppress the fopen warning associated with searching the load path for file names.
 
 ### Contributing
 Contribution are welcome and those interested in contributing should see the [CONTRIBUTING](CONTRIBUTING)  file for details.

@@ -214,7 +214,7 @@ classdef VolumeMesh < handle
         % Inputs:
         %   numInternalVertices -- approximate number of internal vertices
         %------------------------------------------------------------------         
-           obj.initializeFromLattice(obj,numInternalVertices,"bcc");
+           obj.initializeFromLattice(numInternalVertices,"bcc");
         end
         function initializeFromFCCLattice(obj,numInternalVertices)
         % initializes a volume mesh w/ BCC lattice point distribution
@@ -222,7 +222,7 @@ classdef VolumeMesh < handle
         % Inputs:
         %   numInternalVertices -- approximate number of internal vertices
         %------------------------------------------------------------------         
-           obj.initializeFromLattice(obj,numInternalVertices,"fcc");
+           obj.initializeFromLattice(numInternalVertices,"fcc");
         end
         function initializeFromLattice(obj,numInternalVertices,latticeType)
         % initializes a volume mesh w/ BCC lattice point distribution

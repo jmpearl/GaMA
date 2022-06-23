@@ -124,22 +124,21 @@ classdef MasconModel < handle % test why handle is slow
                 latticeType = "pc";
             end
         
+            insetSurfaceMesh = mesh.offsetSurfaceMesh(-mesh.resolution/2, ...
+                                                       mesh.numVertices);
             % spacing so numInternal works out
             if strcmp(latticeType,"bcc")
-                ds  = (2*mesh.volume/numMascons)^(1/3);
+                ds  = (2*insetSurfaceMesh.volume/numMascons)^(1/3);
             elseif strcmp(latticeType,"fcc")
-                ds  = (4*mesh.volume/numMascons)^(1/3);
+                ds  = (4*insetSurfaceMesh.volume/numMascons)^(1/3);
             else
-                ds  = (mesh.volume/numMascons)^(1/3);
+                ds  = (insetSurfaceMesh.volume/numMascons)^(1/3);
             end
 
             maxExtent=max(mesh.coordinates,[],1) + 0.5*ds;
             minExtent=min(mesh.coordinates,[],1) - 0.5*ds; 
 
             candidates = createLattice(ds,minExtent,maxExtent,latticeType);
-
-            insetSurfaceMesh = mesh.offsetSurfaceMesh(-mesh.resolution/2, ...
-                                                       mesh.numVertices);
 
             internalNodes = insetSurfaceMesh.isInside(candidates)==1;
 

@@ -38,8 +38,7 @@ classdef MasconModel < handle % test why handle is slow
                 
                 if strcmp(distributionType,'simplePacking')
                     
-                    ds = (mesh.volume/numMascons)^(1/3);
-                    obj.initializeSimplePacking( mesh, ds, Mu);
+                    obj.initializeSimplePacking( mesh, numMascons, Mu);
                     
                 elseif strcmp(distributionType,'extendedTetrahedra')
                     

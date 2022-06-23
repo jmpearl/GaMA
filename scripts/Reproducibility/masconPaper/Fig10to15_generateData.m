@@ -1,12 +1,8 @@
-% ==========================================================================
-% Pearl J.M., Hitt, D.L., "Mascon Distribution Techniques for Asteroids and 
-%                          Comets".
+%==========================================================================
+% Pearl J.M., Hitt, D.L.
 %
-% ** Note GaMA is under development small variations from published
-% ** results may occur.
-%
-% plots acceleration error of quadrature and analytic models as a function
-% of normalized altitude
+% ** Note GaMA is under development small variations from published 
+% ** results may occur if using the latest version
 %==========================================================================
 
 clear all; clc; close all;

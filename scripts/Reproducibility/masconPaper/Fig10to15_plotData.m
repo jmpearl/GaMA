@@ -1,9 +1,8 @@
-% ==========================================================================
-% Script to Plot fig XX from data
-% Pearl J.M., Hitt, D.L., "" .
+%==========================================================================
+% Pearl J.M., Hitt, D.L.
 %
-% ** Note GaMA is under development small variations from published
-% ** results may occur.
+% ** Note GaMA is under development small variations from published 
+% ** results may occur if using the latest version
 %==========================================================================
 
 clear all; clc; close all;

@@ -2,7 +2,7 @@
 % Pearl J.M., Hitt, D.L.
 %
 % ** Note GaMA is under development small variations from published 
-% ** results may occur.
+% ** results may occur if using the latest version
 %
 % plots our distributions of mascons. Uncomment the distribution you want
 % to get it to plot. For the extended tetrahedral distribution, ln. 24 

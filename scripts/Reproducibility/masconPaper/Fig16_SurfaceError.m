@@ -1,14 +1,8 @@
 %==========================================================================
-% Script used to create Figure 9 and 10
-% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
-% Model for Comets and Asteroids using Curvilinear Surface Definitions"
-% 2022 (submitted).
+% Pearl J.M., Hitt, D.L.
 %
 % ** Note GaMA is under development small variations from published 
-% ** results may occur.
-%
-% plots acceleration error of quadrature and analytic models as a function
-% of normalized altitude
+% ** results may occur if using the latest version
 %==========================================================================
 
 clear all; clc; close all;

@@ -1549,11 +1549,11 @@ classdef SurfaceMesh < handle
                     %max(abs(minDist))
                     %minDist = max(min(minDist,1.0),-1.0);
                     meshTemp.coordinates = meshTemp.coordinates+pointNormals.*(minDist);
-                    
                     iter = iter+1;
                 end
             end
             
+            meshTemp.resetBulkProperties();
         end
         
         function setResolution(obj,newResolution)

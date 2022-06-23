@@ -1,8 +1,14 @@
 %==========================================================================
-% Pearl J.M., Hitt, D.L.
+% Script used to create Figure 9 and 10
+% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
+% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% 2022 (submitted).
 %
 % ** Note GaMA is under development small variations from published 
-% ** results may occur if using the latest version
+% ** results may occur.
+%
+% plots acceleration error of quadrature and analytic models as a function
+% of normalized altitude
 %==========================================================================
 
 clear all; clc; close all;
@@ -49,7 +55,7 @@ meshCoarse = SurfaceMesh(mesh);           % copy  construct
 meshCoarse.setNumFaces(numFacesCoarse);   % coarsen to
 sm = SurfaceMesh(meshCoarse);
 volMesh = VolumeMesh(meshCoarse);
-volMesh.initializeFromSimpleLattice(numMascons-meshCoarse.numVertices);
+volMesh.initializeFromSimpleLattice(numMascons);
 volMesh.smooth(5)
 
 volMeshFine = VolumeMesh(mesh);

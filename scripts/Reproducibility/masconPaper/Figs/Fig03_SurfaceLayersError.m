@@ -1,8 +1,14 @@
 %==========================================================================
-% Pearl J.M., Hitt, D.L.
+% Script used to create Figure 9 and 10
+% Pearl J.M., Hitt, D.L., "Cutting Corners: A Quadrature-based Gravity
+% Model for Comets and Asteroids using Curvilinear Surface Definitions"
+% MNRAS, 2022 (submitted).
 %
 % ** Note GaMA is under development small variations from published 
-% ** results may occur if using the latest version
+% ** results may occur.
+%
+% plots acceleration error of quadrature and analytic models as a function
+% of normalized altitude
 %==========================================================================
 
 clear all; clc; close all;
@@ -25,11 +31,9 @@ fieldnames = {'AnalyticPolyhedron',...
               'MasconDegree0Lattice',...
               'MasconDegree1LatticeVertex',...
               'MasconDegree2LatticeVertex',...
-              'MasconDegree2LatticeCell',...
-              'MasconDegree2LatticeNode',...
-              'MasconDegree2LatticeExcludeSurface',...
-              'MasconDegree1OctreeVertex',...
-              'FineIterateExcludeSurface'};
+              'MasconDegree1LatticeCell',...
+              'MasconDegree1LatticeNode',...
+              'MasconDegree1OctreeVertex'};
 
 % body parameters
 %--------------------------------------------------------------------------
@@ -49,18 +53,9 @@ meshCoarse = SurfaceMesh(mesh);           % copy  construct
 meshCoarse.setNumFaces(numFacesCoarse);   % coarsen to
 sm = SurfaceMesh(meshCoarse);
 volMesh = VolumeMesh(meshCoarse);
-volMesh.initializeFromSimpleLattice(numMascons-meshCoarse.numVertices);
+volMesh.initializeFromSimpleLattice(numMascons);
 volMesh.smooth(5)
 
-volMeshFine = VolumeMesh(mesh);
-volMeshFine.initializeFromFCCLattice(numMascons);
-volMeshFine.smooth(5);
-
-
-% surface interation 1/2 full refine surface
-vmIter4 = VolumeMesh(mesh);
-vmIter4.initializeFromSurfaceIteration(1/2,round(1.25*numMascons));
-vmIter4.smooth(2)
 
 % Gravity Models
 %-------------------------------------------------------------------------
@@ -70,7 +65,7 @@ truthGravityModel = AnalyticPolyhedralModel(mesh,Mu);
 % coarse analytic polyhedron
 polyhedralModel = AnalyticPolyhedralModel(meshCoarse,Mu);
 
-% mascon degree 0 lattice
+% mascon degree 2 lattice
 masconModel{1} = MasconModel(meshCoarse,Mu,numMascons);
 
 % mascon degree 1 lattice
@@ -90,21 +85,16 @@ masconModel{4}.initializeFromVolumeMesh(volMesh,Mu,'cell');
 masconModel{5} = MasconModel();
 masconModel{5}.initializeFromVolumeMesh(volMesh,Mu,'node');
 
-masconModel{6} = MasconModel();
-masconModel{6}.initializeFromVolumeMesh(volMeshFine,Mu,'excludesurface');
-
 % mascon degree 2 octree
+
 volMesh2 = VolumeMesh(sm);
 volMesh2.initializeFromOctree(1000,2,2);
 volMesh2.smooth(1);
 volMesh2.setDegree(2);
 volMesh2.curve(mesh);
 
-masconModel{7} = MasconModel();
-masconModel{7}.initializeFromVolumeMesh(volMesh2,Mu,'vertex');
-
-masconModel{8} = MasconModel();
-masconModel{8}.initializeFromVolumeMesh(vmIter4,Mu,'excludesurface');
+masconModel{6} = MasconModel();
+masconModel{6}.initializeFromVolumeMesh(volMesh2,Mu,'vertex');
 
 
 % Acceleration and Error
@@ -113,38 +103,23 @@ pts = mesh.coordinates;
 
 % "true" potential/acceleration
 potOriginal = truthGravityModel.potential(pts);
-tic;
 accOriginal = truthGravityModel.acceleration(pts);
-timing(1)=toc;
 accOgMag = vecnorm(accOriginal,2,2);
 
 % analytic coarse polyhedron potential/acceleration 
 potTempPoly = polyhedralModel.potential(pts);
-tic;
 accTempPoly = polyhedralModel.acceleration(pts);
-timing(2) = toc;
 potError = 100*abs((potTempPoly - potOriginal)./potOriginal);
 accError = 100*vecnorm((accTempPoly - accOriginal),2,2)./accOgMag;
 
 % mascon models 
 for j=1:length(masconModel)
     potTemp = masconModel{j}.potential(pts);
-    tic;
     accTemp = masconModel{j}.acceleration(pts);
-    timing(j+2)=toc;
-    
     potError = [potError,100*abs((potTemp - potOriginal)./potOriginal)];
     accError = [accError,100*vecnorm((accTemp - accOriginal),2,2)./accOgMag];
 end
 
-maxAccelerationError = max(accError);
-averageAccelerationError = mean(accError);
-maxPotentialError = max(potError);
-averagePotentialError = mean(accError);
-
-for j=1:length(masconModel)
-    masconModel{j}.numElements
-end
 % add them to our surface mesh 
 for j = 1:size(potError,2)
 
@@ -154,16 +129,5 @@ for j = 1:size(potError,2)
 end
 
 % export our vtk file to visualize with paraview
-mesh.writeVTK('masconSurfaceError2.vtk')
-stop
-figure(1)
-hold on
-plot3(meshCoarse.coordinates(:,1),...
-       meshCoarse.coordinates(:,2),...
-       meshCoarse.coordinates(:,3),'gx')
-plot3(masconModel{3}.coordinates(:,1),...
-       masconModel{3}.coordinates(:,2),...
-       masconModel{3}.coordinates(:,3),'r.')
-plot3(masconModel{6}.coordinates(:,1),...
-       masconModel{6}.coordinates(:,2),...
-       masconModel{6}.coordinates(:,3),'ko')
+mesh.writeVTK('masconSurfaceError.vtk')
+

@@ -22,7 +22,9 @@ function [coordinates] = createLattice(ds,minExtent,maxExtent,latticeType)
     assert(length(maxExtent)==3,"max extent must be a 1x3")
     assert(length(minExtent)==3,"min extent must be a 1x3")
     assert(all(maxExtent>minExtent),"min extent must be smaller than max")
-    assert(any(strcmp(latticeType,["pc","fcc","bcc"])),"lattice type must be: pc, fcc, or bcc") %#ok<STCI> 
+    assert(strcmp(latticeType,"pc") || ...
+           strcmp(latticeType,"bcc") || ...
+           strcmp(latticeType,"fcc"),"lattice type must be: pc, fcc, or bcc") %#ok<STCI> 
     
     % Number of elements per dimension
     numStepsx = round((maxExtent(1)-minExtent(1))/ds);

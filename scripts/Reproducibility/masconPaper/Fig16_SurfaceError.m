@@ -59,7 +59,7 @@ volMeshFine.smooth(5);
 
 % surface interation 1/2 full refine surface
 vmIter4 = VolumeMesh(mesh);
-vmIter4.initializeFromSurfaceIteration(1/2,round(1.25*numMascons));
+vmIter4.initializeFromSurfaceIteration(1/2,round(1.1*numMascons));
 vmIter4.smooth(2)
 
 % Gravity Models
@@ -154,7 +154,7 @@ for j = 1:size(potError,2)
 end
 
 % export our vtk file to visualize with paraview
-mesh.writeVTK('masconSurfaceError2.vtk')
+mesh.writeVTK('masconSurfaceError.vtk')
 stop
 figure(1)
 hold on

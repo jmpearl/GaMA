@@ -21,7 +21,7 @@ mesh.coarsen(2000);            % coursen to 2000 faces
 
 % set up the gravity models
 %--------------------------------------------------------------------------
-gravityModel = AnalyticPolyhedralModel(mesh,Mu);     % Werner 1994
+gravityModel = ApproximatePolyhedralModel(mesh,Mu);     % Werner 1994
 % gravityModel2 = MasconModel(mesh,Mu/2);            % Chanut et al 2015
 
 %gravityModel = CompositeModel(gravityModel1,...
@@ -32,7 +32,7 @@ gravityModel = AnalyticPolyhedralModel(mesh,Mu);     % Werner 1994
 %--------------------------------------------------------------------------
 disp('Body-Fixed Frame Integration')
 
-T = [0,10]*24*3600;        % one day integration period
+T = [0,10]*24*3600;        % ten day integration period
 Ro = 35000;                % initial radius
 Vcirc = sqrt(Mu/Ro);       % initially circular
 Xo = [Ro,0,0,0,0,Vcirc];   % I.C.s [rx,vx,ry,vy,rz,vz]
@@ -44,7 +44,7 @@ odeOptions = odeset('RelTol',tol,'AbsTol',[tol tol tol tol tol tol]);
 
 integrator = Integrator(gravityModel,@ode23);
 integrator = integrator.setOdeOptions(odeOptions);
-integrator = integrator.setFrame('BFF');
+integrator = integrator.setFrame('BFF'); % defaults to inertial
 integrator.omega = Omega;
 
 tic
@@ -56,10 +56,10 @@ disp(' ')
 % Integrate in the Inertial Frame
 %--------------------------------------------------------------------------
 disp('Inertial Frame Integration')
-Xo = [Ro,0,0,0,0,Vcirc];   
 
 integrator = integrator.setFrame('inertial');
 
+Xo = [Ro,0,0,0,0,Vcirc];   
 
 tic
 [toutInertial,xoutInertial] = integrator.integrate(T,Xo);

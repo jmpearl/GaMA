@@ -6,9 +6,10 @@ classdef CompositeModel
 %--------------------------------------------------------------------------
 
     properties(GetAccess=public)
-        models    % list of models
-        frames    % list of model frames (inertial or BFF)
-        numModels % number of models
+        frame;       % flag for body-fixed vs inertial frame
+        
+        models       % list of models
+        numModels    % number of models
     end    
     methods
         function [obj] = CompositeModel(varargin)
@@ -18,18 +19,21 @@ classdef CompositeModel
         %   varargin -- allows multiple gravity models to be used in
         %               conjunction
         %------------------------------------------------------------------
-
+            obj.frame = 'BFF';
+            
+            for i = 1:length(varargin)
+                assert(strcmp(varargin{i}.frame,'BFF'),'consistuent models must be in BFF')
+            end
             obj.models = varargin;
             obj.numModels = length(varargin);
             
         end
         
         function [obj] = appendModel(obj,model)
-        % Provides several methods to distribute mascon throughout interior
+        % add a model to our list of models
         %------------------------------------------------------------------
         % Inputs:
-        %   varargin -- allows multiple gravity models to be used in
-        %               conjunction
+        %   model -- BFF physics model
         %------------------------------------------------------------------
 
             obj.numModels = obj.numModels+1;
@@ -37,11 +41,7 @@ classdef CompositeModel
             
         end
         function [obj] = clearModels(obj)
-        % Provides several methods to distribute mascon throughout interior
-        %------------------------------------------------------------------
-        % Inputs:
-        %   varargin -- allows multiple gravity models to be used in
-        %               conjunction
+        % clear our our physics models
         %------------------------------------------------------------------
 
             obj.numModels = 0;

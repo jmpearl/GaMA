@@ -6,6 +6,7 @@ classdef ConstantAccelerationModel
 
     properties(GetAccess=public)
         frame; % integrator needs to know if bff or inertial x,y,z
+        
         a;     % acceleration
     end    
     methods

@@ -3,6 +3,7 @@ classdef MasconModel < handle % test why handle is slow
 %--------------------------------------------------------------------------
 %
     properties(GetAccess=public)
+        frame;       % flag for body-fixed vs inertial frame
         mu;          % G x mass of mascon
         coordinates; % coordinates of mascons
         res;         % lengthscale used to prevent singularities
@@ -18,7 +19,7 @@ classdef MasconModel < handle % test why handle is slow
         %   N ----------------- number of mascons (rough)
         %   Mu ---------------- standard gravitational parameter for object
         %------------------------------------------------------------------
-           
+           obj.frame = 'BFF';
             if nargin==3
                 distributionType = 'simplePacking';
             elseif nargin==2

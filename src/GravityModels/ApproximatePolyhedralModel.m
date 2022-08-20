@@ -16,6 +16,7 @@ classdef ApproximatePolyhedralModel
 
 properties (GetAccess=public)
         frame;          % integrator needs to know if bff or inertial x,y,z
+        
         GrhoAn;         % G x density x facet area  vector An
         positions;      % quadrature points
         res;

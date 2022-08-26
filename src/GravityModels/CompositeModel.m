@@ -1,13 +1,14 @@
-classdef CompositeModel
+classdef CompositeModel < handle
 % Composite model 
 %--------------------------------------------------------------------------
 % acts as a container for multiple models so that SRP or hybrid gravity
 % models can be implemented
 %--------------------------------------------------------------------------
-
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'BFF'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
     properties(GetAccess=public)
-        frame;       % flag for body-fixed vs inertial frame
-        
         models       % list of models
         numModels    % number of models
     end    
@@ -19,8 +20,6 @@ classdef CompositeModel
         %   varargin -- allows multiple gravity models to be used in
         %               conjunction
         %------------------------------------------------------------------
-            obj.frame = 'BFF';
-            
             for i = 1:length(varargin)
                 assert(strcmp(varargin{i}.frame,'BFF'),'consistuent models must be in BFF')
             end
@@ -29,7 +28,7 @@ classdef CompositeModel
             
         end
         
-        function [obj] = appendModel(obj,model)
+        function appendModel(obj,model)
         % add a model to our list of models
         %------------------------------------------------------------------
         % Inputs:
@@ -40,7 +39,7 @@ classdef CompositeModel
             obj.models{obj.numModels} = model;
             
         end
-        function [obj] = clearModels(obj)
+        function clearModels(obj)
         % clear our our physics models
         %------------------------------------------------------------------
 
@@ -48,7 +47,7 @@ classdef CompositeModel
             obj.models{:} = [];
             
         end
-        
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------

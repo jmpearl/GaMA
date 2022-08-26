@@ -1,4 +1,4 @@
-classdef ApproximatePolyhedralModel
+classdef ApproximatePolyhedralModel < handle
 % Quadrature-based gravity model for the homogeneous polyhedron
 %==========================================================================
 % Approximate polyhedral model using numerical quadrature to approximate
@@ -13,10 +13,12 @@ classdef ApproximatePolyhedralModel
 % auto expand -- matlab 2016b+
 % vecnorm ------ matlab 2017b+
 %==========================================================================
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'BFF'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
 
-properties (GetAccess=public)
-        frame;          % integrator needs to know if bff or inertial x,y,z
-        
+    properties (GetAccess=public)
         GrhoAn;         % G x density x facet area  vector An
         positions;      % quadrature points
         res;
@@ -24,20 +26,19 @@ properties (GetAccess=public)
         numElements     % number of quadrature points
     end
     
-    methods (Access=public)
+    methods
         function obj = ApproximatePolyhedralModel(mesh,Mu,quadratureRule)
-            obj.frame = 'BFF';
             if nargin==3
-                obj = obj.initializeFromMesh(mesh,Mu,quadratureRule);
+                obj.initializeFromMesh(mesh,Mu,quadratureRule);
             elseif nargin==2
-                obj = obj.initializeFromMesh(mesh,Mu);
+                obj.initializeFromMesh(mesh,Mu);
             elseif nargin~=0
                 error('incorrect number of arguments in constructor')
             end
             
         end        
         
-        function obj = initializeFromMesh(obj,mesh,Mu,quadratureRule)
+        function initializeFromMesh(obj,mesh,Mu,quadratureRule)
 
             if nargin~=4 && nargin~=3
                 error(' incorrect number of arguments: (SurfaceMesh,Mu,quadratureRule)')
@@ -63,7 +64,7 @@ properties (GetAccess=public)
             
             
         end
-        
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------

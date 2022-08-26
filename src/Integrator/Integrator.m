@@ -1,15 +1,16 @@
-classdef Integrator
+classdef Integrator < handle
 % for integration of trajectories around small bodies. 
     
     properties
-        SRPModel                % solar radiation pressure model
-        thirdBodyGravityModel   % modelling background fields
-        gravityModel            % bff gravity model of primary
-        omega                   % rotation rate (rad/sec)
+        numModels;              % number of models
+        gravityModel;           % models applied in BFF frame
+        thirdBodyModel;         % interial frame 3rd body acceleration
+        SRPModel;               % solar radiation pressure model
+        omega;                  % rotation rate (rad/sec)
         
-        integrator              % function handle for integrator
-        mode                    % 0-inertial, frame 1-BFF, 2-variational Eqns
-        odeOptions              % options from odeset
+        integrator;             % function handle for integrator
+        mode = 0;               % 0-inertial, frame 1-BFF, 2-variational Eqns
+        odeOptions;             % options from odeset
     end
     
     methods
@@ -21,7 +22,6 @@ classdef Integrator
         %   integratorhandle -- handle for matlab integrator func (default
         %                       ode45)
         %------------------------------------------------------------------   
-            obj.mode = 0;
             if nargin == 1
                 obj.integrator = @ode45;
                 obj.gravityModel = gravityModel;
@@ -31,9 +31,9 @@ classdef Integrator
             elseif nargin~= 0 
                 error('Incorrect number of inputs')
             end
-            
+            obj.numModels = length(obj.gravityModel);
         end
-        function obj = setFrame(obj,frame)
+        function setFrame(obj,frame)
         % method to swtich frame (body-fixed vs inrtial)
         %------------------------------------------------------------------
         % Inputs:
@@ -49,7 +49,7 @@ classdef Integrator
                 error("frame is 'inertial' or 'BFF'")
             end
         end
-        function obj = setOdeOptions(obj,options)
+        function setOdeOptions(obj,options)
         % pass-through for matlab standard integrator options
         %------------------------------------------------------------------
         % Inputs:
@@ -57,7 +57,7 @@ classdef Integrator
         %------------------------------------------------------------------
             obj.odeOptions = options;
         end
-                
+
         function [tout,xout] = integrate(obj,T,Xo)
         % wrapper method 
         %------------------------------------------------------------------
@@ -88,20 +88,26 @@ classdef Integrator
         %   dx - state vector derives
         %------------------------------------------------------------------
             
-            %obj.ThirdBodyGravityModels([x(1),x(3),x(5)])
-
-            % Rotate Position to body-fixed frame
+            % positions in inertial and BFF frames
+            P_inertial = [x(1:6:end),x(3:6:end),x(5:6:end)];
+            
             Rot = [cos(obj.omega*t), -sin(obj.omega*t), 0;
                    sin(obj.omega*t),  cos(obj.omega*t), 0;
                    0,                 0,                1];
             
-            P = [x(1:6:end),x(3:6:end),x(5:6:end)]*Rot; 
+            P_bff = P_inertial*Rot; 
+           
+            % acceleration
+            a = obj.gravityModel.acceleration(P_bff)*Rot'; 
             
-            [ a ] = obj.gravityModel.acceleration(P);
-            
-            % rotate acceleration to inertial frame
-            a = a*Rot'; 
-            
+            if ~isempty(obj.thirdBodyModel)
+                a = a + obj.thirdBodyModel.acceleration(P_inertial);
+            end
+            if ~isempty(obj.SRPModel)
+                a = a + obj.SRPModel.acceleration(P_inertial);
+            end
+
+            % odes
             dx = zeros(size(x,1),1);
             dx(1:6:end) = x(2:6:end);
             dx(2:6:end) = a(:,1);
@@ -125,12 +131,31 @@ classdef Integrator
         % Outputs:
         %   dx - state vector derives
         %------------------------------------------------------------------
-        
-            [ a ] = obj.gravityModel.acceleration([x(1:6:end),x(3:6:end),x(5:6:end)]);
             
+            % position in different frames
+            P_bff = [x(1:6:end),x(3:6:end),x(5:6:end)];
+            
+            Rot = [ cos(obj.omega*t),  sin(obj.omega*t), 0;
+                  -sin(obj.omega*t),  cos(obj.omega*t), 0;
+                   0,                 0,                1];
+            
+            P_inertial = P_bff*Rot; 
+           
+            %aceleration
+            a = obj.gravityModel.acceleration(P_bff); 
+            
+            if ~isempty(obj.thirdBodyModel)
+                a = a + obj.thirdBodyModel.acceleration(P_inertial)*Rot';
+            end
+            if ~isempty(obj.SRPModel)
+                a = a + obj.SRPModel.acceleration(P_inertial)*Rot';
+            end
+
+            % rotation-based psuedo acceleration
             rotTermx = obj.omega^2*x(1)+2*obj.omega*x(4);
             rotTermy = obj.omega^2*x(3)-2*obj.omega*x(2);
             
+            % odes
             dx = zeros(size(x,1),1);
             dx(1:6:end) = x(2:6:end);
             dx(2:6:end) = a(:,1)+rotTermx;
@@ -142,7 +167,7 @@ classdef Integrator
 
         end
         function dx = GoverningEquationsVariational( obj, t, x)
-         % variational governing equation in the inertial. 
+        % variational governing equation in the inertial. 
         %------------------------------------------------------------------
         % This will typically be slower than the default governing
         % equations because the orbital period is long and BFF results in
@@ -155,19 +180,25 @@ classdef Integrator
         % Outputs:
         %   dx - state vector derives
         %------------------------------------------------------------------
-          
+            
+            % inertial acceleration and gravity gradient
+            P_inertial = [x(1:6:end),x(3:6:end),x(5:6:end)];
+            a_inertial = obj.intertialAcceleration(P_inertial);
+            gradA_inertial = obj.inertialGravityGradient(P_inertial);
+
+            % body-fixed frame acceleration and gravity gradient
             Rot = [cos(obj.omega*t), -sin(obj.omega*t), 0;
                    sin(obj.omega*t),  cos(obj.omega*t), 0;
                    0,                 0,                1];
             
-            P = [x(1:6:end),x(3:6:end),x(5:6:end)]*Rot; 
+            P_bff = P_inertial*Rot; 
             
-            a = obj.gravityModel.acceleration(P);
-            gradA = obj.gravityModel.gravityGradient(P);
+            a_bff = obj.bodyFixedFrameAcceleration(P_bff);
+            gradA_bff = obj.bodyFixedFrameGravityGradient(P_bff);
             
             % correct this ... that not a real tensor
-            gradA = (Rot*gradA*Rot');
-            a = a*Rot';
+            gradA = (Rot*gradA_bff*Rot')+gradA_inertial;
+            a = a_bff*Rot'+a_inertial;
             
             dx = zeros(length(x),1);
             dx(1:12:end) = x(2:12:end);

@@ -2,8 +2,11 @@ classdef MasconModel < handle % test why handle is slow
 % Mass-concentration model 
 %--------------------------------------------------------------------------
 %
+    properties(GetAccess=public,SetAccess=private)
+        frame = 'BFF'  % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
     properties(GetAccess=public)
-        frame;       % flag for body-fixed vs inertial frame
         mu;          % G x mass of mascon
         coordinates; % coordinates of mascons
         res;         % lengthscale used to prevent singularities
@@ -19,7 +22,6 @@ classdef MasconModel < handle % test why handle is slow
         %   N ----------------- number of mascons (rough)
         %   Mu ---------------- standard gravitational parameter for object
         %------------------------------------------------------------------
-           obj.frame = 'BFF';
             if nargin==3
                 distributionType = 'simplePacking';
             elseif nargin==2
@@ -192,7 +194,7 @@ classdef MasconModel < handle % test why handle is slow
             % get our resolution
             obj.calculateResolution(volumes);
         end
-        
+
         function calculateResolution(obj,volumes)
             obj.res = 0.5*volumes.^(1/3);
         end

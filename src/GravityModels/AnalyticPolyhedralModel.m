@@ -1,4 +1,4 @@
-classdef AnalyticPolyhedralModel 
+classdef AnalyticPolyhedralModel < handle
 % Werner's  analytic model for the gravitational fields of polyhedra
 %==========================================================================
 %  Gravitational Model derived from the surface definition of an
@@ -24,10 +24,13 @@ classdef AnalyticPolyhedralModel
 % auto expand -- matlab 2016b+
 % vecnorm ------ matlab 2017b+
 %==========================================================================
+    
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'BFF'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
 
     properties(GetAccess=public)
-        frame;          % integrator needs to know if bff or inertial x,y,z
-        
         mu;             % gravitational constant per unit volume
         faceCentroids;  % facet centroids
         faceVertices1;  % coordinates of first vertex
@@ -52,15 +55,14 @@ classdef AnalyticPolyhedralModel
     
     methods
         function obj = AnalyticPolyhedralModel(mesh, Mu)
-            obj.frame = 'BFF';
             if nargin == 2
-                obj = obj.initializeFromMesh(mesh, Mu);
+                obj.initializeFromMesh(mesh, Mu);
             elseif nargin ~= 0
                 error('incorrect number of arguments in constructor')
             end
 
         end
-        function obj = initializeFromMesh(obj, mesh, Mu)
+        function initializeFromMesh(obj, mesh, Mu)
             
             % change to be consistent w/ approx model nomenclature
             % handle variable input 
@@ -137,7 +139,7 @@ classdef AnalyticPolyhedralModel
            obj.numEdges = size(obj.edgeVertices1,1);
            obj.numElements = obj.numFaces + obj.numEdges;
         end
-        
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------

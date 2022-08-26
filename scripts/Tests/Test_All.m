@@ -21,6 +21,9 @@ failureTracker = Test_VolumeMesh_Bennu(failureTracker);
 % Gravity Models -- Spherical Harmonic
 failureTracker = Test_SphericalHarmonicModel_Bennu(failureTracker);
 failureTracker = Test_SphericalHarmonicModel_Earth(failureTracker);
+
+% Integrator Class
+failureTracker = Test_Integrator(failureTracker);
 disp(" ")
 
 if ~failureTracker

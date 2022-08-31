@@ -14,7 +14,7 @@ jobs:
     - uses: actions/checkout@v2
     - run: |
         sudo apt -yq update
-        sudo apt install -yq --no-install-recommends octave        
+        sudo snap install octave       
     - run: octave --eval "Test_All"
       working-directory: scripts/Tests
 

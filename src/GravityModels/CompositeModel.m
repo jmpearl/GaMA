@@ -1,14 +1,16 @@
-classdef CompositeModel
+classdef CompositeModel < handle
 % Composite model 
 %--------------------------------------------------------------------------
 % acts as a container for multiple models so that SRP or hybrid gravity
 % models can be implemented
 %--------------------------------------------------------------------------
-
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'BFF'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
     properties(GetAccess=public)
-        models    % list of models
-        frames    % list of model frames (inertial or BFF)
-        numModels % number of models
+        models       % list of models
+        numModels    % number of models
     end    
     methods
         function [obj] = CompositeModel(varargin)
@@ -18,37 +20,34 @@ classdef CompositeModel
         %   varargin -- allows multiple gravity models to be used in
         %               conjunction
         %------------------------------------------------------------------
-
+            for i = 1:length(varargin)
+                assert(strcmp(varargin{i}.frame,'BFF'),'consistuent models must be in BFF')
+            end
             obj.models = varargin;
             obj.numModels = length(varargin);
             
         end
         
-        function [obj] = appendModel(obj,model)
-        % Provides several methods to distribute mascon throughout interior
+        function appendModel(obj,model)
+        % add a model to our list of models
         %------------------------------------------------------------------
         % Inputs:
-        %   varargin -- allows multiple gravity models to be used in
-        %               conjunction
+        %   model -- BFF physics model
         %------------------------------------------------------------------
 
             obj.numModels = obj.numModels+1;
             obj.models{obj.numModels} = model;
             
         end
-        function [obj] = clearModels(obj)
-        % Provides several methods to distribute mascon throughout interior
-        %------------------------------------------------------------------
-        % Inputs:
-        %   varargin -- allows multiple gravity models to be used in
-        %               conjunction
+        function clearModels(obj)
+        % clear our our physics models
         %------------------------------------------------------------------
 
             obj.numModels = 0;
             obj.models{:} = [];
             
         end
-        
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------

@@ -1,4 +1,4 @@
-classdef SphericalHarmonicModel
+classdef SphericalHarmonicModel < handle
 %==========================================================================
 % Spheical Harmonic graviational model. Potential, acceleration,
 % and gravitational gradient calculations are based on Gottlieb 1993,
@@ -37,18 +37,19 @@ classdef SphericalHarmonicModel
 % for the computation of the potential harmonic coefficients of a constant 
 % density polyhedron," J Geod 83:925–942, 2009.       
 %==========================================================================
-    
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'BFF'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 1;   % id for iertial
+    end
     properties (GetAccess=public)
-        frame; % integrator needs to know if bff or inertial x,y,z
-       
-        L; % degree of model
-        C; % cosine coefficients
-        S; % sine coefficients
-        Ro; % brillouin sphere radius
-        Mu; % gravitational parameter
+        L;    % degree of model
+        C;    % cosine coefficients
+        S;    % sine coefficients
+        Ro;   % brillouin sphere radius
+        Mu;   % gravitational parameter
     end
     
-    methods (Access=public)
+    methods
         function obj = SphericalHarmonicModel(mesh,Mu,N)
         % provides several options for initializing SH models
         %------------------------------------------------------------------
@@ -83,8 +84,7 @@ classdef SphericalHarmonicModel
         %   Mu --- 
         %   N ----
         %------------------------------------------------------------------
-            obj.frame = 'BFF';
-            
+
             if nargin==2
                 N = 4;
             elseif nargin==1 % need to allow construction from GCF file
@@ -101,7 +101,7 @@ classdef SphericalHarmonicModel
                     if contains(mesh,'obj')
                         mesh = SurfaceMesh(mesh); 
                     elseif constains(mesh,'.gfc')
-                        obj = readGFC(mesh);
+                        obj.readGFC(mesh);
                     end
                     
                 elseif ~isa(mesh,'SurfaceMesh') && ~isa(mesh,'MasconModel')
@@ -109,14 +109,14 @@ classdef SphericalHarmonicModel
                 end
                 
                 if isa(mesh,'SurfaceMesh')
-                    obj = obj.initializeFromMesh(mesh,Mu,N);
+                    obj.initializeFromMesh(mesh,Mu,N);
                 elseif isa(mesh,'MasconModel')
-                    obj = obj.initializeFromMascons(mesh,N);
+                    obj.initializeFromMascons(mesh,N);
                 end
             end
             
         end
-        function obj = initializeFromMesh(obj,mesh,Mu,N)
+        function initializeFromMesh(obj,mesh,Mu,N)
         % calculate harmonic coefficients from polyhedral surface def
         %------------------------------------------------------------------
         % Werner, R.A., Spherical Harmonic Coefficients  for the Potential
@@ -404,7 +404,7 @@ classdef SphericalHarmonicModel
             obj.Ro=a; % radius of sphere
             obj.Mu=Mu; % gravitational parameter
         end
-        function obj = initializeFromMascons(obj,masconModel,N)
+        function initializeFromMascons(obj,masconModel,N)
         % calculate harmonic coefficients from mascon distribution
         %------------------------------------------------------------------
         % Werner, R.A., Spherical Harmonic Coefficients  for the Potential
@@ -478,7 +478,7 @@ classdef SphericalHarmonicModel
             
 
         end
-        function obj = readGFC(obj,fileName)
+        function readGFC(obj,fileName)
         % reads a GCF file to create spherical harmonic model
             
             obj.C = [];
@@ -512,7 +512,7 @@ classdef SphericalHarmonicModel
             end
             fclose(fid);
         end
-        
+
         function [potential] = potential(obj,p)
         %------------------------------------------------------------------
         % returns the gravitational acceleration in cartesian coordinates

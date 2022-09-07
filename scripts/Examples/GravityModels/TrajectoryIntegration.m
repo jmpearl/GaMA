@@ -4,8 +4,11 @@
 %==========================================================================
 clear all; close all; clc;
 
-
-G = 6.67e-11;
+% trajectory I.C.s
+%--------------------------------------------------------------------------
+G = 6.67e-11;              % gravitational constant
+T = [0,50]*24*3600;        % ten day integration period
+Ro = 35000;                % initial radius
 
 % load body data
 %--------------------------------------------------------------------------
@@ -21,30 +24,31 @@ mesh.coarsen(2000);            % coursen to 2000 faces
 
 % set up the gravity models
 %--------------------------------------------------------------------------
-gravityModel = AnalyticPolyhedralModel(mesh,Mu);     % Werner 1994
-% gravityModel2 = MasconModel(mesh,Mu/2);            % Chanut et al 2015
+gravityModel1 = ApproximatePolyhedralModel(mesh,Mu/2);
+gravityModel2 = ApproximatePolyhedralModel(mesh,Mu/2);
 
-%gravityModel = CompositeModel(gravityModel1,...
-%                              gravityModel2);       % superpose models
+gravityModel = CompositeModel(gravityModel1,...
+                              gravityModel2);       % superpose models
 
+a_nominal = gravityModel.acceleration([0,Ro,0]);
+thirdBodyModel = ConstantAccelerationModel(0.1*a_nominal);
 
 % Integrate in the Body Fixed Frame
 %--------------------------------------------------------------------------
 disp('Body-Fixed Frame Integration')
 
-T = [0,10]*24*3600;        % one day integration period
-Ro = 35000;                % initial radius
 Vcirc = sqrt(Mu/Ro);       % initially circular
 Xo = [Ro,0,0,0,0,Vcirc];   % I.C.s [rx,vx,ry,vy,rz,vz]
-tol = 1e-6;                % integration tolerances
+tol = 1e-8;                % integration tolerances
 
 Xo = convertState2BFF(0,Xo,Omega);
 
 odeOptions = odeset('RelTol',tol,'AbsTol',[tol tol tol tol tol tol]);
 
-integrator = Integrator(gravityModel,@ode23);
-integrator = integrator.setOdeOptions(odeOptions);
-integrator = integrator.setFrame('BFF');
+integrator = Integrator(gravityModel,@ode45);
+integrator.thirdBodyModel = thirdBodyModel;
+integrator.setOdeOptions(odeOptions);
+integrator.setFrame('BFF'); % defaults to inertial
 integrator.omega = Omega;
 
 tic
@@ -56,10 +60,10 @@ disp(' ')
 % Integrate in the Inertial Frame
 %--------------------------------------------------------------------------
 disp('Inertial Frame Integration')
+
+integrator.setFrame('inertial');
+
 Xo = [Ro,0,0,0,0,Vcirc];   
-
-integrator = integrator.setFrame('inertial');
-
 
 tic
 [toutInertial,xoutInertial] = integrator.integrate(T,Xo);

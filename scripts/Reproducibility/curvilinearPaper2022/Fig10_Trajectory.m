@@ -80,8 +80,8 @@ t_interp = linspace(T(1),T(2),nPeriods*nSamplesPeriod);
 tol = 1e-8;
 odeOptions = odeset('RelTol',tol,'AbsTol',[tol tol tol tol tol tol]);
 integrator = Integrator(gravityModel{1},@ode45);
-integrator = integrator.setOdeOptions(odeOptions);
-integrator = integrator.setFrame('inertial');
+integrator.setOdeOptions(odeOptions);
+integrator.setFrame('inertial');
 integrator.omega = Omega;
 
 for i =1:length(gravityModel)

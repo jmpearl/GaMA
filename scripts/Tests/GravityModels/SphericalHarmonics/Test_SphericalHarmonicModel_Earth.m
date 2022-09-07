@@ -16,7 +16,7 @@ Nsample=1000;                       % for averaging algo run time
 P = 1.0001*[0,0,1]/norm([0,0,1]);   % sample point normalized
 GFCFile = 'ULux_CHAMP2013s.gfc';    % 120x120 harmonic model
 SH = SphericalHarmonicModel;        % construct harmonic model
-SH = SH.readGFC(GFCFile);           % load in the harmonic data
+SH.readGFC(GFCFile);                % load in the harmonic data
 P=P*SH.Ro;                          % set the sample point
 
 % Eckman's implementations assume these terms are zero

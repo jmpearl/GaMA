@@ -1,11 +1,13 @@
-classdef ConstantAccelerationModel
+classdef ConstantAccelerationModel < handle
 % applies constant acceleration in user defined direction 
 %--------------------------------------------------------------------------
 % for third body gravity fields, sun, jupiter etc...
 %--------------------------------------------------------------------------
-
+    properties (GetAccess=public,SetAccess=private)
+        frame = 'intertial'; % integrator needs to know if bff or inertial x,y,z
+        frameId = 0;         % id for iertial
+    end
     properties(GetAccess=public)
-        frame; % integrator needs to know if bff or inertial x,y,z
         a;     % acceleration
     end    
     methods
@@ -15,13 +17,13 @@ classdef ConstantAccelerationModel
         % Inputs:
         %   a -- constant acceleration
         %------------------------------------------------------------------
-            obj.frame = 'inertial';
             obj.a = a;
             
         end
-        function [obj] = addAcceleration(obj,a)
+        function addAcceleration(obj,a)
            obj.a = obj.a + a; 
         end
+
         function [potential] = potential(obj,p)
         % Gravitational potential using the negative convention
         %------------------------------------------------------------------

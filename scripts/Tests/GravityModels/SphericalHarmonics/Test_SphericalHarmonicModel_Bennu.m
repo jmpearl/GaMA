@@ -23,7 +23,7 @@ meshfile = 'Bennu_2692.obj';        % mesh file
 M = SurfaceMesh(meshfile);          % construct surface mesh
 
 SH = SphericalHarmonicModel;        % construct empty SH object
-SH = SH.initializeFromMesh(M,Mu,N); % calc our harmonic coeffs
+SH.initializeFromMesh(M,Mu,N);      % calc our harmonic coeffs
 SH.C(1,1)=1;                        % assumed by test functions
 SH.C(2,1)=0; SH.C(2,2)=0;           % assumed by test functions
 SH.S(2,1)=0; SH.S(2,2)=0;           % assumed by test functions

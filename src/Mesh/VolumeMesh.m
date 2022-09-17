@@ -292,6 +292,7 @@ classdef VolumeMesh < handle
 
             % offset the surface mesh inward coarsening along the way
             while tempMesh.volume > 0.1*obj.surfaceMesh.volume
+                %tempMesh.addFaceField(tempMesh.faceAreas(),'faceAreas')
                 %tempMesh.writeVTK(['tempMesh',num2str(i),'.vtk'])
                 i=i+1;
                 % reduce vertex count 

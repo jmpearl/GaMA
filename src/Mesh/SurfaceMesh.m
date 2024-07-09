@@ -1565,10 +1565,10 @@ classdef SurfaceMesh < handle
             
            newNumFaces = obj.surfaceArea/newResolution^2;
             
-            if newNuFaces < 20
+            if newNumFaces < 20
                 warning('very low face count might fail')
             end
-            warni
+        
             obj.setNumFaces(newNumFaces);
 
         end
@@ -3028,7 +3028,7 @@ classdef SurfaceMesh < handle
                 elseif size(obj.faceFields{i}.data,2)==3
                     vtkDataHeader = ['VECTORS ',obj.faceFields{i}.name,' float\n'];
                     fprintf(fileID,vtkDataHeader);
-                    fprintf(fileID,formatSpecVectorFloat,obj.faceFields{i}.data);
+                    fprintf(fileID,formatSpecVectorFloat,obj.faceFields{i}.data');
                 else
                     warning(['skipping faceData{',num2str(i),'} not scalar or vector'])
                 end
@@ -3054,7 +3054,7 @@ classdef SurfaceMesh < handle
                 elseif size(obj.nodeFields{i}.data,2)==3
                     vtkDataHeader = ['VECTORS ',obj.nodeFields{i}.name,' float\n'];
                     fprintf(fileID,vtkDataHeader);
-                    fprintf(fileID,formatSpecVectorFloat,obj.nodeFields{i}.data);
+                    fprintf(fileID,formatSpecVectorFloat,obj.nodeFields{i}.data');
                 else
                     warning(['skipping faceData{',num2str(i),'} not scalar or vector'])
                 end

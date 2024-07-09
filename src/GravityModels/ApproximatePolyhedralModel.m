@@ -79,7 +79,7 @@ classdef ApproximatePolyhedralModel < handle
             for i = 1:size(p,1)
                 
                 rhat  = obj.positions-p(i,:); 
-                rhat = rhat./sqrt(rhat(:,1).^2+rhat(:,2).^2+rhat(:,3).^2);
+                rhat = rhat./max(sqrt(rhat(:,1).^2+rhat(:,2).^2+rhat(:,3).^2),0.2*obj.res(i));
                 %rhat(isnan(rhat)|isinf(rhat))=0;
                 potential(i,1) = -1/2 * rhat(:)' * obj.GrhoAn(:); 
                 

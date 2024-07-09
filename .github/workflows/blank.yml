@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    paths:
+    - "**.m"
+    - ".github/workflows/blank.yml"
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - run: |
+        sudo apt -yq update
+        sudo snap install octave       
+    - run: octave --eval "Test_All"
+      working-directory: scripts/Tests
+
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - run: choco install octave.portable
+    - run: octave --eval "Test_All"
+      working-directory: scripts/Tests

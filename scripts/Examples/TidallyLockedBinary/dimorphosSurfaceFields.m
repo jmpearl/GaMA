@@ -1,7 +1,5 @@
 clear all; close all; clc;
 
-addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
-
 fileName = 'Didymos_6m.obj';%
 %fileName = 'Didymos_25cm_to_4m_GradedMesh.obj';%
 

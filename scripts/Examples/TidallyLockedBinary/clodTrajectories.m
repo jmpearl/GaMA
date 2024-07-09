@@ -1,7 +1,5 @@
 clear all; close all; clc;
 
-addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
-
 fileName = 'Didymos_6m.obj';
 datFileName = 'BustedClods/10xVesc_21s.dat';
 

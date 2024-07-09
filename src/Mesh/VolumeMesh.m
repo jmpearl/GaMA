@@ -292,6 +292,7 @@ classdef VolumeMesh < handle
 
             % offset the surface mesh inward coarsening along the way
             while tempMesh.volume > 0.1*obj.surfaceMesh.volume
+                %tempMesh.addFaceField(tempMesh.faceAreas(),'faceAreas')
                 %tempMesh.writeVTK(['tempMesh',num2str(i),'.vtk'])
                 i=i+1;
                 % reduce vertex count 
@@ -845,7 +846,51 @@ classdef VolumeMesh < handle
             boolOutput(obj.numBoundaryVertices+1:end,:)=0;
             
         end
+        
+        function [edgeLengths] = cellEdgeLengths(obj)
+        % edge lengths for each cell
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids - coordinates of centroids
+        %   volumes --- volumes of each cell
+        %------------------------------------------------------------------
+            p1 = obj.coordinates(obj.cells(:,1),:);
+            p2 = obj.coordinates(obj.cells(:,2),:); 
+            p3 = obj.coordinates(obj.cells(:,3),:); 
+            p4 = obj.coordinates(obj.cells(:,4),:); 
+            v1 = vecnorm(p2-p1,2,2);
+            v2 = vecnorm(p3-p1,2,2);
+            v3 = vecnorm(p4-p1,2,2);
+            v4 = vecnorm(p2-p4,2,2);
+            v5 = vecnorm(p3-p2,2,2);
+            v6 = vecnorm(p4-p3,2,2);
 
+            edgeLengths = [v1,v2,v3,v4,v5,v6];
+        end
+        function [faceAreas] = cellFaceAreas(obj)
+        % areas of the foue faces
+        %------------------------------------------------------------------
+        % Outputs:
+        %   centroids - coordinates of centroids
+        %   volumes --- volumes of each cell
+        %------------------------------------------------------------------
+            p1 = obj.coordinates(obj.cells(:,1),:);
+            p2 = obj.coordinates(obj.cells(:,2),:); 
+            p3 = obj.coordinates(obj.cells(:,3),:); 
+            p4 = obj.coordinates(obj.cells(:,4),:); 
+            v1 = p2-p1;
+            v2 = p3-p1;
+            v3 = p4-p1;
+            v4 = p2-p4;
+            v5 = p3-p2;
+            %v6 = p4-p3;
+
+            A1 = 0.5*vecnorm(cross(v1,v2),2,2);
+            A2 = 0.5*vecnorm(cross(v1,v3),2,2);
+            A3 = 0.5*vecnorm(cross(v2,v3),2,2);
+            A4 = 0.5*vecnorm(cross(v4,v5),2,2);
+            faceAreas = [A1,A2,A3,A4];
+        end
         function [centroids,volumes] = cellCentroids(obj)
         % centroids of cells
         %------------------------------------------------------------------
@@ -1614,6 +1659,23 @@ classdef VolumeMesh < handle
             
         end
         
+        function plotVertexCells(obj,i)
+
+            figure()
+            hold on
+            for j = 1:obj.numCells
+                if any(obj.cells(j,:)==i)
+                    p1 = obj.coordinates(obj.cells(j,1),:);
+                    p2 = obj.coordinates(obj.cells(j,2),:); 
+                    p3 = obj.coordinates(obj.cells(j,3),:); 
+                    p4 = obj.coordinates(obj.cells(j,4),:); 
+                    X = [p1;p2;p3;p4;p1;p3;p4;p2];
+                    plot3(X(:,1),X(:,2),X(:,3),'k-')
+                    %break
+                end
+            end
+            daspect([1,1,1])
+        end
         function plotCellNodes(obj,i)
 
             figure(1)

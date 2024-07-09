@@ -194,6 +194,19 @@ classdef MasconModel < handle % test why handle is slow
             % get our resolution
             obj.calculateResolution(volumes);
         end
+        
+        function c = centroid(obj)
+        % moves distributions so centroid is at origin
+        %------------------------------------------------------------------
+           firstMoment = sum(obj.mu,1);
+           secondMoment = sum(obj.mu.*obj.coordinates,1);
+           c = secondMoment/firstMoment;
+        end
+        function center(obj)
+        % moves distributions so centroid is at origin
+        %------------------------------------------------------------------
+           obj.coordinates=obj.coordinates-obj.centroid();
+        end
 
         function calculateResolution(obj,volumes)
             obj.res = 0.5*volumes.^(1/3);

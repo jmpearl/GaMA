@@ -6,11 +6,14 @@ classdef Integrator < handle
         gravityModel;           % models applied in BFF frame
         thirdBodyModel;         % interial frame 3rd body acceleration
         SRPModel;               % solar radiation pressure model
-        omega;                  % rotation rate (rad/sec)
+        omega=0.0;              % rotation rate (rad/sec)
         
         integrator;             % function handle for integrator
         mode = 0;               % 0-inertial, frame 1-BFF, 2-variational Eqns
         odeOptions;             % options from odeset
+        inertialThirdBodyFrame=true % option to swtich third body 
+                                    % acceleration to be BFF integrated to
+                                    % represent tidal locked bodies
     end
     
     methods
@@ -101,7 +104,11 @@ classdef Integrator < handle
             a = obj.gravityModel.acceleration(P_bff)*Rot'; 
             
             if ~isempty(obj.thirdBodyModel)
-                a = a + obj.thirdBodyModel.acceleration(P_inertial);
+                if obj.inertialThirdBodyFrame
+                    a = a + obj.thirdBodyModel.acceleration(P_inertial);
+                else
+                    a = a + obj.thirdBodyModel.acceleration(P_bff)*Rot';
+                end
             end
             if ~isempty(obj.SRPModel)
                 a = a + obj.SRPModel.acceleration(P_inertial);

@@ -36,7 +36,7 @@ mesh.setNumFaces(500);
 % markerScaleFactor = 20;
 % fileName = 'distExtend3.png';
 % masconModel = MasconModel();
-% masconModel.initializeExtendedTetrahedra(mesh,3,Mu)
+% masconModel.initializeExtendedTetrahedra(mesh,Mu,3)
 
 % packing simple lattice
 %---------------------------------------------------------------------------

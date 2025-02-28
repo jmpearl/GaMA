@@ -1,5 +1,7 @@
 clear all; close all; clc;
 
+addpath(genpath('/home/jmpearl/GravityModels/CLEO'))
+
 fileName = 'Didymos_6m.obj';%
 %fileName = 'Didymos_25cm_to_4m_GradedMesh.obj';%
 
@@ -41,13 +43,13 @@ grav = CompositeModel(dimorphosGrav,...
 
 
 % integration I.C. and time interval
-reductionFactor = linspace(0.1,1.8,50);
+reductionFactor = linspace(0.1,1.0,20);
 alpha = 25;
-phi = linspace(0,360,15);
+phi = linspace(0,360,9);
 
 Ro = 1.01*abs(max(surf.coordinates(:,1)-surf.centroid(:,1)));
 Vcirc = sqrt(Mu/Ro);
-To = [0,15] * 3600;
+To = [0,1] * 3600;
 
 for j=1:length(phi)
 for i=1:length(reductionFactor)

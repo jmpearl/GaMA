@@ -28,6 +28,7 @@ SH.C(1,1)=1;                        % assumed by test functions
 SH.C(2,1)=0; SH.C(2,2)=0;           % assumed by test functions
 SH.S(2,1)=0; SH.S(2,2)=0;           % assumed by test functions
 
+PM = AnalyticPolyhedralModel(M,Mu);
 
 disp('Body            : Bennu')
 disp(['Mesh File       : ',meshfile])
@@ -74,6 +75,17 @@ toc
 disp(['Acceleration = ',num2str(accel_lear','%.8e')])
 disp(' ')
 
+
+disp('--------------------------------------------------------------------')
+
+disp('Scheeres and Werner Polyhedral Model') 
+tic
+for i =1:Nsample
+    accel_poly = PM.acceleration(P);
+end
+toc
+disp(['Acceleration = ',num2str(accel_poly,'%.8e')])
+disp(' ')
 
 
 % check our error 

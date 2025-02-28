@@ -5,6 +5,7 @@ lineCounter = 1;
 tline = fgetl(fid);
 while ischar(tline)
     str = strtrim(tline);
+    str = strrep(str,',',' ');
     %disp(str)
     if ~isempty(tline) && lineCounter >= headerLength
         charData = [charData,str];

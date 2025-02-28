@@ -46,7 +46,7 @@ classdef MasconModel < handle % test why handle is slow
                 elseif strcmp(distributionType,'extendedTetrahedra')
                     
                     numLayers = max(1, round(numMascons/mesh.numFaces));
-                    obj.initializeExtendedTetrahedra(mesh,numLayers,Mu);
+                    obj.initializeExtendedTetrahedra(mesh,Mu,numLayers);
                     
                 else
                     
